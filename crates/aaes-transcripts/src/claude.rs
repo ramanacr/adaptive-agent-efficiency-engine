@@ -21,6 +21,7 @@ use crate::model::{Agent, Event, Session, Usage};
 
 const SHELL_TOOLS: &[&str] = &["Bash", "PowerShell"];
 const MUTATING_TOOLS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit"];
+const FILE_TOOLS: &[&str] = &["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"];
 
 /// Parse one transcript file. Returns the main session and, if present, the sidechain session.
 pub fn parse_reader<R: BufRead>(reader: R) -> Vec<Session> {
@@ -65,10 +66,13 @@ pub fn parse_reader<R: BufRead>(reader: R) -> Vec<Session> {
         match ty {
             "assistant" => parse_assistant(&v, sess, &mut seen_requests),
             "user" => parse_user(&v, sess),
+            // Attachments (file mentions, hook context, reminders) add prompt content.
+            "attachment" => push_noise(sess),
             _ => {}
         }
     }
 
+    side.sidechain = true;
     let mut out = vec![main];
     if !side.is_empty() {
         out.push(side);
@@ -103,22 +107,57 @@ fn parse_assistant(v: &Value, sess: &mut Session, seen: &mut HashSet<String>) {
                 None
             };
             let mutates = MUTATING_TOOLS.contains(&tool.as_str());
+            let input = &b["input"];
+            let path = if FILE_TOOLS.contains(&tool.as_str()) {
+                input["file_path"]
+                    .as_str()
+                    .or_else(|| input["notebook_path"].as_str())
+                    .map(normalize_path)
+            } else {
+                None
+            };
+            let range =
+                if tool == "Read" && (!input["offset"].is_null() || !input["limit"].is_null()) {
+                    Some(format!("{}:{}", input["offset"], input["limit"]))
+                } else {
+                    None
+                };
             sess.events.push(Event::ToolCall {
                 id: b["id"].as_str().unwrap_or_default().to_owned(),
                 tool,
                 command,
                 mutates,
+                path,
+                range,
             });
         }
     }
 }
 
+fn push_noise(sess: &mut Session) {
+    if !matches!(sess.events.last(), Some(Event::Noise)) {
+        sess.events.push(Event::Noise);
+    }
+}
+
+/// Case- and separator-insensitive path key (Windows paths differ only in case/slashes).
+fn normalize_path(p: &str) -> String {
+    p.replace('\\', "/").to_lowercase()
+}
+
 fn parse_user(v: &Value, sess: &mut Session) {
-    let Some(blocks) = v["message"]["content"].as_array() else {
+    let content = &v["message"]["content"];
+    if content.is_string() {
+        push_noise(sess); // typed prompt
+        return;
+    }
+    let Some(blocks) = content.as_array() else {
         return;
     };
     for b in blocks {
         if b["type"].as_str() != Some("tool_result") {
+            // Text/image blocks next to tool results (reminders, prompts) are extra content.
+            push_noise(sess);
             continue;
         }
         let (bytes, images, persisted) = measure_content(&b["content"]);
@@ -242,12 +281,28 @@ mod tests {
     }
 
     #[test]
+    fn read_paths_ranges_and_noise() {
+        let src = r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"C:\\Src\\App.cs"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/x/y.ts","offset":10,"limit":50}}]}}
+{"type":"user","message":{"content":"fix the bug"}}
+{"type":"attachment","attachment":{}}
+"#;
+        let s = &parse_reader(src.as_bytes())[0];
+        assert!(
+            matches!(&s.events[1], Event::ToolCall { path: Some(p), range: None, .. } if p == "c:/src/app.cs")
+        );
+        assert!(matches!(&s.events[2], Event::ToolCall { range: Some(r), .. } if r == "10:50"));
+        assert_eq!(s.events[3], Event::Noise);
+        assert_eq!(s.events.len(), 4, "consecutive noise collapses");
+    }
+
+    #[test]
     fn sidechain_is_a_separate_session() {
         let src = r#"{"type":"assistant","isSidechain":true,"message":{"id":"m9","usage":{"input_tokens":1,"output_tokens":1},"content":[]}}
 "#;
         let out = parse_reader(src.as_bytes());
         assert_eq!(out.len(), 2);
         assert!(out[0].is_empty());
+        assert!(out[1].sidechain && !out[0].sidechain);
         assert_eq!(out[1].events.len(), 1);
     }
 

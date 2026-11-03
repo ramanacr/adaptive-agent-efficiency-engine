@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use serde::Serialize;
 
-use crate::analyze::{AgentAcc, Settings};
+use crate::analyze::{AgentAcc, LARGE_READ_TOKENS, Lever, Settings};
 use crate::model::{Agent, Usage};
 
 #[derive(Debug, Serialize)]
@@ -68,6 +68,11 @@ pub struct AgentReport {
     pub redundant_reruns: u64,
     pub redundant_rerun_rate: f64,
     pub post_compaction_reruns: u64,
+    pub bytes_per_token: f64,
+    pub bytes_per_token_source: String,
+    pub calibration: Calibration,
+    pub levers: Levers,
+    pub subagents: SubagentSplit,
     pub tools: BTreeMap<String, u64>,
     pub families: Vec<FamilyReport>,
 }
@@ -87,6 +92,49 @@ pub struct FamilyReport {
     pub max: f64,
     pub mean_occupancy_requests: f64,
     pub redundant_reruns: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Calibration {
+    pub samples: usize,
+    pub p25: f64,
+    pub median: f64,
+    pub p75: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LeverReport {
+    pub calls: u64,
+    pub est_tokens: f64,
+    pub cost_units: f64,
+    pub share_of_input: f64,
+}
+
+impl LeverReport {
+    fn new(l: &Lever, input_units: f64) -> Self {
+        Self {
+            calls: l.calls,
+            est_tokens: l.est_tokens,
+            cost_units: l.cost_units,
+            share_of_input: ratio(l.cost_units, input_units),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct Levers {
+    pub unchanged_rereads: LeverReport,
+    pub large_whole_reads: LeverReport,
+    pub large_whole_reads_edited_later: u64,
+    pub shell_file_reads: LeverReport,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SubagentSplit {
+    pub subagent_sessions: u64,
+    pub subagent_share_of_input: f64,
+    pub subagent_tool_result_units: f64,
+    pub main_tool_result_share: f64,
 }
 
 /// Fewer sessions than this, and the verdict is "insufficient data".
@@ -174,6 +222,33 @@ impl Report {
                 redundant_reruns: a.redundant_reruns,
                 redundant_rerun_rate: ratio(a.redundant_reruns as f64, a.shell_calls as f64),
                 post_compaction_reruns: a.post_compaction_reruns,
+                bytes_per_token: a.bytes_per_token,
+                bytes_per_token_source: a.bytes_per_token_source.to_owned(),
+                calibration: {
+                    let mut c = a.calibration.clone();
+                    c.sort_by(f64::total_cmp);
+                    Calibration {
+                        samples: c.len(),
+                        p25: percentile(&c, 0.25),
+                        median: percentile(&c, 0.50),
+                        p75: percentile(&c, 0.75),
+                    }
+                },
+                levers: Levers {
+                    unchanged_rereads: LeverReport::new(&a.unchanged_rereads, a.input_units),
+                    large_whole_reads: LeverReport::new(&a.large_whole_reads, a.input_units),
+                    large_whole_reads_edited_later: a.large_whole_reads_edited,
+                    shell_file_reads: LeverReport::new(&a.shell_file_reads, a.input_units),
+                },
+                subagents: SubagentSplit {
+                    subagent_sessions: a.side_sessions,
+                    subagent_share_of_input: ratio(a.side_input_units, a.input_units),
+                    subagent_tool_result_units: a.side_tool_units,
+                    main_tool_result_share: ratio(
+                        a.tool_units - a.side_tool_units,
+                        a.input_units - a.side_input_units,
+                    ),
+                },
                 tools: a.tools,
                 families,
             });
@@ -202,10 +277,13 @@ impl Report {
         let _ = writeln!(o, "# AAES M-1 transcript report\n");
         let _ = writeln!(
             o,
-            "`{} {}` · tool tokens estimated at {} bytes/token · gate {} · {}\n",
+            "`{} {}` · bytes/token {} · gate {} · {}\n",
             self.tool,
             self.version,
-            self.settings.bytes_per_token,
+            match self.settings.bytes_per_token {
+                Some(b) => format!("set to {b}"),
+                None => "calibrated from transcripts".to_owned(),
+            },
             pct(self.settings.gate),
             match &self.settings.since {
                 Some(s) => format!("sessions since {s}"),
@@ -329,6 +407,63 @@ impl Report {
             }
             let _ = writeln!(o);
 
+            let c = &a.calibration;
+            let _ = writeln!(o, "### Token estimate\n");
+            let _ = writeln!(
+                o,
+                "Bytes/token used: **{:.2}** ({}). Calibration: {} samples, median {:.2} (IQR {:.2}–{:.2}).\n",
+                a.bytes_per_token, a.bytes_per_token_source, c.samples, c.median, c.p25, c.p75
+            );
+
+            let lv = &a.levers;
+            let _ = writeln!(o, "### Context levers (share of cost-weighted input)\n");
+            let _ = writeln!(
+                o,
+                "| Lever | Calls | Est. tokens | Share of input |\n|---|---:|---:|---:|"
+            );
+            let lever_rows = [
+                (
+                    "Unchanged re-reads (Read tool, same file+range, no edit/compaction since)",
+                    &lv.unchanged_rereads,
+                ),
+                (
+                    "Large whole-file reads (Read tool, no range)",
+                    &lv.large_whole_reads,
+                ),
+                (
+                    "File reads via shell (cat/sed/head/tail/Get-Content…)",
+                    &lv.shell_file_reads,
+                ),
+            ];
+            for (name, l) in lever_rows {
+                let _ = writeln!(
+                    o,
+                    "| {name} | {} | {} | {} |",
+                    fmt_n(l.calls as f64),
+                    fmt_n(l.est_tokens),
+                    pct(l.share_of_input)
+                );
+            }
+            let _ = writeln!(
+                o,
+                "\nLarge whole-file reads are those over {} est. tokens. {} of {} ({}) were edited later in the same context.\n",
+                fmt_n(LARGE_READ_TOKENS),
+                fmt_n(lv.large_whole_reads_edited_later as f64),
+                fmt_n(lv.large_whole_reads.calls as f64),
+                pct(ratio(
+                    lv.large_whole_reads_edited_later as f64,
+                    lv.large_whole_reads.calls as f64
+                ))
+            );
+            let sa = &a.subagents;
+            let _ = writeln!(
+                o,
+                "**Sub-agents:** {} sub-agent contexts account for {} of cost-weighted input. Tool-result share in main contexts only: {}.\n",
+                fmt_n(sa.subagent_sessions as f64),
+                pct(sa.subagent_share_of_input),
+                pct(sa.main_tool_result_share)
+            );
+
             let _ = writeln!(o, "### Tool mix\n");
             let mut tools: Vec<_> = a.tools.iter().collect();
             tools.sort_by(|x, y| y.1.cmp(x.1).then_with(|| x.0.cmp(y.0)));
@@ -359,8 +494,11 @@ impl Report {
         );
         let _ = writeln!(
             o,
-            "- Tool-result tokens are **estimates** (bytes ÷ {}). There's no public local Claude tokenizer. The share scales linearly with this ratio.",
-            self.settings.bytes_per_token
+            "- Tool-result tokens are **estimates** (bytes ÷ bytes/token). There's no public local Claude tokenizer. Unless set with `--bytes-per-token`, the ratio is calibrated from prompt growth across turns that added exactly one large tool result (≥ 200 samples needed, else 4.0). The share scales inversely with it."
+        );
+        let _ = writeln!(
+            o,
+            "- *Unchanged re-read* ignores file changes made through the shell (formatters, git checkout), so it is an upper bound."
         );
         let _ = writeln!(
             o,

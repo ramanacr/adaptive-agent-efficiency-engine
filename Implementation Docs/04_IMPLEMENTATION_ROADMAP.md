@@ -9,9 +9,11 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 0.2 | 2026-11-03 | Re-sequenced per design review (`05_DESIGN_REVIEW.md`): added M-1 Measure; the first vertical slice targets Claude Code native hooks instead of MCP; daemonless M1 (ADR-011); Standard-tier scope (ADR-013); MCP/Codex moved to M3; local model (M5) and policy learning + Hardened tier (M6) gated on evidence. Added a language spike (ADR-017) to M0. |
 | 0.3 | 2026-11-03 | Rust accepted, so the M0 spike becomes a permanent cold-start CI benchmark. M-1 tool implemented (`aaes mine`). Release pipeline added to M1 (signed binaries) and team policy to M3. Public/private corpus split. Repository layout reflects the real workspace. |
 
-## M-1 — Measure before building  *(tool ready — run pending)*
+## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
-- ☐ Run on the maintainer's machine; run `--probe` first to validate the Codex format assumptions.
+- ✅ Run on the maintainer's machine (2026-11-03): **verdict GO** with bytes/token calibrated from transcripts. Context-lever metrics added (unchanged re-reads, large whole-file reads, shell file reads, sub-agent split). Detailed numbers are kept privately (ADR-020).
+- ☐ Validate the calibrated bytes/token against the `count_tokens` API on a sample before M1 sizing.
+- ☐ Codex: re-run once Codex sessions exist locally (`--probe` first).
 - Report: token share by tool/command family, top 20 commands, result-size distribution, occupancy, compactions, re-run rate, cache-write/read mix.
 
 **Exit**: go/no-go decision recorded, plus a ranked list of target command families that seeds M0 fixtures and M1 parsers.

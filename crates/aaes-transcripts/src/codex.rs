@@ -99,6 +99,8 @@ pub fn parse_reader<R: BufRead>(reader: R) -> Session {
                     tool: name,
                     command,
                     mutates: false,
+                    path: None,
+                    range: None,
                 });
             }
             ("response_item", "local_shell_call") => {
@@ -107,6 +109,8 @@ pub fn parse_reader<R: BufRead>(reader: R) -> Session {
                     tool: "local_shell".to_owned(),
                     command: command_text(&p["action"]["command"]),
                     mutates: false,
+                    path: None,
+                    range: None,
                 });
             }
             ("response_item", "custom_tool_call") => {
@@ -117,6 +121,8 @@ pub fn parse_reader<R: BufRead>(reader: R) -> Session {
                     tool: name,
                     command: None,
                     mutates,
+                    path: None,
+                    range: None,
                 });
             }
             ("response_item", t) if t.ends_with("_output") => {

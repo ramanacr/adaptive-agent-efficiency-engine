@@ -52,6 +52,10 @@ pub enum Event {
         command: Option<String>,
         /// The call edits workspace files (Edit/Write/apply_patch…), which starts a new mutation epoch.
         mutates: bool,
+        /// File the call reads or writes (Read/Edit/Write/MultiEdit/NotebookEdit), used in-memory only.
+        path: Option<String>,
+        /// Read range (`offset`/`limit`) if the read was partial; `None` means a whole-file read.
+        range: Option<String>,
     },
     ToolResult {
         id: String,
@@ -64,6 +68,9 @@ pub enum Event {
     },
     /// Context compaction boundary: content before it is no longer in the model's context.
     Compaction,
+    /// Other content entering the context (user text, attachments, injected reminders). Used to
+    /// exclude turns from bytes/token calibration.
+    Noise,
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize)]
@@ -79,6 +86,8 @@ pub struct Session {
     pub stats: ParseStats,
     /// First ISO-8601 timestamp seen, used for `--since` filtering.
     pub first_ts: Option<String>,
+    /// Sub-agent context (sidechain), separate from the main conversation.
+    pub sidechain: bool,
 }
 
 impl Session {
@@ -88,6 +97,7 @@ impl Session {
             events: Vec::new(),
             stats: ParseStats::default(),
             first_ts: None,
+            sidechain: false,
         }
     }
 

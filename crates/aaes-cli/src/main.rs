@@ -40,9 +40,9 @@ struct MineArgs {
     /// Only sessions starting on/after this date (ISO-8601 prefix, e.g. 2026-09-01).
     #[arg(long)]
     since: Option<String>,
-    /// Bytes per token used to estimate tool-result tokens.
-    #[arg(long, default_value_t = 4.0)]
-    bytes_per_token: f64,
+    /// Bytes per token for estimating tool-result tokens [default: calibrated from transcripts].
+    #[arg(long)]
+    bytes_per_token: Option<f64>,
     /// Go/no-go threshold for tool-result share of cost-weighted input.
     #[arg(long, default_value_t = 0.20)]
     gate: f64,
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
 }
 
 fn mine(a: MineArgs) -> Result<()> {
-    if a.bytes_per_token.is_nan() || a.bytes_per_token <= 0.0 {
+    if a.bytes_per_token.is_some_and(|b| b.is_nan() || b <= 0.0) {
         bail!("--bytes-per-token must be > 0");
     }
     if !(0.0..=1.0).contains(&a.gate) {
@@ -134,10 +134,17 @@ fn mine(a: MineArgs) -> Result<()> {
                 return Vec::new();
             };
             let r = BufReader::with_capacity(1 << 16, f);
-            match agent {
+            let mut out = match agent {
                 Agent::ClaudeCode => claude::parse_reader(r),
                 Agent::Codex => vec![codex::parse_reader(r)],
+            };
+            // Claude Code stores sub-agent transcripts under `<session>/subagents/`.
+            if path.components().any(|c| c.as_os_str() == "subagents") {
+                for s in &mut out {
+                    s.sidechain = true;
+                }
             }
+            out
         })
         .collect();
 
