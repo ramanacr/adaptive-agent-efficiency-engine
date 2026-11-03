@@ -13,7 +13,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
 - ✅ Run on the maintainer's machine (2026-11-03): **verdict GO** with bytes/token calibrated from transcripts. Context-lever metrics added (unchanged re-reads, large whole-file reads, shell file reads, sub-agent split). Detailed numbers are kept privately (ADR-020).
-- ☐ Validate the calibrated bytes/token against the `count_tokens` API (`tools/calibration-check/count_tokens_check.py`) before M1 sizing.
+- ✅ Calibration validated against the `count_tokens` API (`tools/calibration-check`, 60 samples across 5 models): the transcript-derived estimate is within ~5% of API counts and slightly over-counts tokens, so it's conservative for savings claims. Verdict unchanged (GO).
 - ☐ Codex: re-run once Codex sessions exist locally (`--probe` first).
 - Report: token share by tool/command family, top 20 commands, result-size distribution, occupancy, compactions, re-run rate, cache-write/read mix.
 
