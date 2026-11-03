@@ -9,7 +9,11 @@ Privacy: the sampled tool-output text is sent to the Anthropic API, the same pro
 originally processed it in those sessions. Nothing is stored.
 
 Usage:
-    ANTHROPIC_API_KEY=... python count_tokens_check.py [--samples 60] [--expected 2.28]
+    AAES_ANTHROPIC_API_KEY=... python count_tokens_check.py [--samples 60] [--expected 2.28]
+
+The key is read from AAES_ANTHROPIC_API_KEY, deliberately NOT from ANTHROPIC_API_KEY: Claude Code
+uses ANTHROPIC_API_KEY instead of a Pro/Max/Team subscription whenever it is set, which would
+switch your agent sessions to API billing.
 
 Stdlib only. Exit code 0 on success, 2 if no usable samples were counted.
 """
@@ -129,9 +133,13 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=20261103)
     a = ap.parse_args()
 
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    key = os.environ.get("AAES_ANTHROPIC_API_KEY")
     if not key:
-        print("ANTHROPIC_API_KEY is not set", file=sys.stderr)
+        print(
+            "AAES_ANTHROPIC_API_KEY is not set. (ANTHROPIC_API_KEY is ignored on purpose: Claude Code "
+            "would use it instead of your subscription.)",
+            file=sys.stderr,
+        )
         return 2
 
     rng = random.Random(a.seed)
