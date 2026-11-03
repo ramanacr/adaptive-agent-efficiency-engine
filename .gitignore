@@ -1,0 +1,22 @@
+/target/
+**/*.rs.bk
+
+# Local reports produced by `aaes mine` (may name your commands/tools; review before sharing)
+/reports/
+*.aaes-report.json
+*.aaes-report.md
+
+# Private benchmark corpus — NEVER commit (proprietary repos, raw tool output, transcripts)
+/bench-private/
+*.local.*
+
+# Files saved by the Claude app into the working folder
+/Claude outputs/
+
+# Editors / OS
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

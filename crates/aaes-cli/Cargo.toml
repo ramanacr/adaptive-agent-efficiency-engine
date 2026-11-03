@@ -1,0 +1,23 @@
+[package]
+name = "aaes-cli"
+description = "AAES command-line interface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "aaes"
+path = "src/main.rs"
+
+[dependencies]
+aaes-transcripts.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+rayon.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
