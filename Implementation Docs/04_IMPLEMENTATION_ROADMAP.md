@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v0.3
+# Implementation Roadmap — AAES v0.4
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -8,11 +8,12 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 0.1 | 2026-11-03 | Initial draft (M0–M6). |
 | 0.2 | 2026-11-03 | Re-sequenced per design review (`05_DESIGN_REVIEW.md`): added M-1 Measure; the first vertical slice targets Claude Code native hooks instead of MCP; daemonless M1 (ADR-011); Standard-tier scope (ADR-013); MCP/Codex moved to M3; local model (M5) and policy learning + Hardened tier (M6) gated on evidence. Added a language spike (ADR-017) to M0. |
 | 0.3 | 2026-11-03 | Rust accepted, so the M0 spike becomes a permanent cold-start CI benchmark. M-1 tool implemented (`aaes mine`). Release pipeline added to M1 (signed binaries) and team policy to M3. Public/private corpus split. Repository layout reflects the real workspace. |
+| 0.4 | 2026-11-03 | **M1 re-targeted to read and search shaping** (ADR-022/023) on M-1 evidence. Build/test parsers moved to M3. Sub-agent hook coverage and rebound/Edit-failure metrics added to M1/M2. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
 - ✅ Run on the maintainer's machine (2026-11-03): **verdict GO** with bytes/token calibrated from transcripts. Context-lever metrics added (unchanged re-reads, large whole-file reads, shell file reads, sub-agent split). Detailed numbers are kept privately (ADR-020).
-- ☐ Validate the calibrated bytes/token against the `count_tokens` API on a sample before M1 sizing.
+- ☐ Validate the calibrated bytes/token against the `count_tokens` API (`tools/calibration-check/count_tokens_check.py`) before M1 sizing.
 - ☐ Codex: re-run once Codex sessions exist locally (`--probe` first).
 - Report: token share by tool/command family, top 20 commands, result-size distribution, occupancy, compactions, re-run rate, cache-write/read mix.
 
@@ -29,19 +30,26 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 
 **Exit**: arms A/A′/B reproducible with measured tokens, cache usage and quality outcomes; cold-start benchmark green.
 
-## M1 — First vertical slice: Claude Code native hooks, deterministic, daemonless
+## M1 — First vertical slice: read and search shaping via Claude Code hooks (deterministic)
+- **Spike first (1–2 days):**
+  - (a) `PostToolUse.updatedToolOutput` replaces Read, Grep and Bash/PowerShell results for the pinned Claude Code version;
+  - (b) hooks fire for **sub-agent** tool calls;
+  - (c) a shaped Read still satisfies Claude Code's read-before-Edit check;
+  - (d) end-to-end hook latency for command vs HTTP hooks on Windows (ADR-021).
+
+  Record the results in the coverage matrix (FUN-012).
 - `aaes init` / `aaes uninstall` that install and remove hooks with settings backup (FUN-020).
-- `PostToolUse` output replacement (`updatedToolOutput`) where supported, with `PreToolUse` rewrite (`aaes run -- <cmd>`) as fallback, for Bash and PowerShell (FUN-014). Feature detection per pinned version.
+- **Read shaping** (FUN-025, ADR-022): threshold, outline extractors (C#, TS/JS, HTML, SCSS/CSS, JSON/YAML, Markdown, generic), head lines, footer, "ask twice, get full". Covers the Read tool plus shell `cat`/`type`/`Get-Content` single-file reads.
+- **Search shaping** (FUN-026, ADR-023): Grep tool content mode, `grep`/`rg`/`git grep`/`Select-String`.
 - Command registry with pass-through defaults; long-running/interactive streaming; Windows execution fidelity (FUN-017, FUN-018).
-- Deterministic parsers and native-format renderers for the **top five** M-1 command families; size threshold; footer (FUN-015).
 - Per-session SQLite (WAL) + encrypted content-addressed raw store; 128-bit handles; retention/quota; redaction (SEC-012..014).
 - `aaes show <handle> [--lines|--grep|--tail|--head]`; once-per-session guidance via `SessionStart.additionalContext` (FUN-016).
 - Compaction-aware state reset (FUN-019).
 - Standard-tier namespacing and negative tests (SEC-001 Standard, SEC-002, SEC-004).
-- Per-session CLI savings report with estimate labels, in both billing views (MET-013).
+- Events for rebound (MET-015) and Edit failures (MET-016). Per-session CLI savings report with estimate labels, in both billing views (MET-013).
 - Release pipeline v0: signed GitHub Release binaries for Windows/Linux/macOS, SBOM, `cargo-deny` gate (FUN-023, SEC-015).
 
-**Exit**: fidelity goldens pass (zero critical loss); no tool regressions (exit codes, ordering, streaming); delivered ≤ raw for every result; cold-start p95 measured against 20 ms; two concurrent sessions isolated; measurable direct token reduction.
+**Exit**: read/search fidelity goldens pass (exact retrieval of every omitted range; exact match totals); no tool regressions; delivered ≤ raw for every result; hook latency measured; two concurrent sessions isolated; measurable direct reduction on shaped families.
 
 ## M2 — Evaluate
 - Arm C vs A / A′ / B on the fix-commit-replay corpus and workload strata, paired, powered for a 3–5 pp margin.
@@ -55,6 +63,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - MCP proxy with original response persistence and schema/error fidelity (FUN-001).
 - MCP recovery tool equivalent to `aaes show`.
 - Agent compatibility/coverage matrix (FUN-012).
+- Build/test renderers (`dotnet build/test`, `ng`/`tsc`, `git diff`) and MCP output shaping (e.g. codegraph, ~10k tokens per call), prioritised by the latest `aaes mine` data.
 - Team policy file and managed deployment notes (FUN-024); winget/Homebrew/Scoop packages.
 
 **Exit**: coverage measured per pinned agent version; no unsupported universal-compatibility claims.
@@ -106,7 +115,12 @@ Implementation Docs/
 ```
 
 ## First vertical slice (minimum useful prototype)
-Input: a Claude Code `PostToolUse` event for a Bash or PowerShell `dotnet build`/`dotnet test` or `ng`/`tsc` invocation (rewrite-mode fallback where output replacement isn't available for the tool). The host runs the real tool unchanged. Preserve the raw response encrypted. Identify compiler/test failures with deterministic extraction. Return native-format compact text with a footer and a scoped raw handle. Count original/delivered tokens (labeled estimates). Allow `aaes show` retrieval by the owning session only. Support two simultaneous sessions. Unit/integration tests for wrong handle, parser failure, raw pass-through, small-result pass-through, long-running command pass-through, compaction reset and Windows encodings. No LLM, no vectors, no daemon.
+Input: a Claude Code `PostToolUse` event for a **Read** tool call without `offset`/`limit` on a file above the threshold, in a main or sub-agent context. Keep the raw content encrypted. Build the outline with the language's extractor and deliver header + outline + first H lines (host line-number format) + footer with a scoped handle. A second whole-file read of the same unchanged file in the same context returns full content. `aaes show <handle> --lines a-b` returns exact lines for the owning session only. Count raw/delivered tokens (calibrated estimates) and emit rebound events. Then add Grep-tool shaping. Tests:
+- wrong handle; outline extractor failure, which falls back to pass-through;
+- small-file and ranged-read pass-through; "ask twice";
+- compaction reset; CRLF/UTF-8/UTF-16 files; Windows paths.
+
+No LLM, no vectors, no daemon (unless ADR-021 is accepted after the spike).
 
 ## Decision log / open technical investigations
 1. Which agent hooks reliably cover shell/file/MCP calls for pinned Claude Code and Codex versions? **Partial findings (v0.2):** Claude Code exposes `PreToolUse.updatedInput`, `PostToolUse.updatedToolOutput`, `PreCompact`/`PostCompact`, `SessionStart.source`; confirm `updatedToolOutput` coverage for built-in tools. Codex hooks are deny-only, cannot replace output, cover Bash only, and fail open. Re-verify per pinned version.

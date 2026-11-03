@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v0.3
+# Benchmark and Evaluation Protocol — AAES v0.4
 
 ## 0. Change log
 | Version | Date | Change |
@@ -6,6 +6,7 @@
 | 0.1 | 2026-11-03 | Initial draft. |
 | 0.2 | 2026-11-03 | Applied design review (`05_DESIGN_REVIEW.md`). Added Phase 0 observational study from existing transcripts (R2), prompt-only arm A′ (R10), fix-commit-replay task corpus and sample-size table with a 3–5 pp noninferiority margin, fixture fidelity as the primary gate (R9), re-run/occupancy/compaction/footer metrics (R5, R8, R4), Windows/PowerShell and long-running strata (R13), compaction and same-user tests (R6, R3). |
 | 0.3 | 2026-11-03 | Phase 0 gate fixed at **≥20% cost-weighted** and implemented as `aaes mine`. Results reported in both billing views (ADR-019). Benchmark corpus split into **public** (OSS repos, reproducible) and **private** (team repos, local only) per ADR-020. Added initial-context overhead metric. |
+| 0.4 | 2026-11-03 | M1 evaluation focuses on read and search shaping: new stratum 13 (read-then-edit on large files), rebound and Edit-failure metrics and gates. Phase 0 result: GO (calibrated); calibration validated against `count_tokens` (`tools/calibration-check`). |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -44,6 +45,7 @@ No unfair mixing of editions or configurations. Record that some native tools ma
 10. **Windows shells:** the same commands under Git Bash and the PowerShell tool; CRLF, UTF-16/code-page output, quoting edge cases.
 11. **Long-running/interactive:** `ng serve`, `dotnet watch`, `docker compose up`, `npm start`. Must stream through untouched; measure that no buffering or hang occurs.
 12. **Long sessions with compaction:** sessions long enough to trigger auto-compaction; verify behavior after compaction (ADR-014).
+13. **Large-file navigation and read-then-edit:** tasks that require understanding or editing files of 500–5,000 lines (C# services, Angular components/templates, SCSS, JSON config). This is the primary M1/M2 stratum for ADR-022.
 
 ## Ground truth and quality
 Create a fixed fixture corpus containing raw tool outputs, mandatory exact invariants (exit codes, error counts, paths, line numbers, code fragments, schema keys), and semantic questions with human-reviewed answer keys. Seed it from Phase 0's top command families.
@@ -86,6 +88,8 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 **Re-run-instead-of-retrieve rate** = re-executions of a command with a valid handle / compacted results delivered.
 **Context occupancy** = Σ (tool-result tokens × turns retained). **Compactions per task.**
 **Footer overhead** = footer tokens / delivered tokens; **pass-through rate** = results under the size threshold / all results.
+**Read rebound** (MET-015) = tokens of follow-up ranged reads, `aaes show` and "ask twice" full reads after a shaped read of the same file in the same context. **Net shaped saving** = raw − delivered − rebound.
+**Edit failure rate** (MET-016) = failed Edit/MultiEdit calls / all Edit/MultiEdit calls.
 
 ## Initial decision gates (proposed thresholds, not observed)
 | Gate | Threshold | Consequence |
@@ -96,6 +100,8 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Outcome (secondary) | Task success noninferior to baseline with pre-registered **3–5 pp** margin, paired, adequately powered | Otherwise hold/inconclusive |
 | Economics | Positive net cost reduction on representative workload, not just cherry-picked compressible outputs; reported vs **A′** as well as A | Do not claim cost win otherwise |
 | Re-run | Re-run-instead-of-retrieve rate does not erase measured savings (net tokens incl. re-runs > 0) | Loosen compression for offending families |
+| Read rebound | Net shaped saving > 0 per shaped family (Read, shell file reads, search) | Raise threshold or disable shaping for that family |
+| Edit fidelity | Edit failure rate with shaping not significantly higher than without (paired) | Block read shaping release |
 | Performance | p95 additional pass-through overhead ≤20 ms **including cold start** on reference desktop (Windows + Linux); full-run latency measured | Optimize or document exception |
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
 | Recovery | Authorized full-result retrieval works; foreign retrieval denied; expired handles report "expired" | Block on violation |

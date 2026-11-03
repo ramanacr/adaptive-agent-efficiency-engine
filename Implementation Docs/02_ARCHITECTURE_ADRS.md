@@ -1,4 +1,4 @@
-# Architecture and Architecture Decision Records — AAES v0.3
+# Architecture and Architecture Decision Records — AAES v0.4
 
 ## 0. Change log
 | Version | Date | Change |
@@ -6,6 +6,7 @@
 | 0.1 | 2026-11-03 | Initial draft. |
 | 0.2 | 2026-11-03 | Applied design review (`05_DESIGN_REVIEW.md`). Reference architecture is now adapter-first: Claude Code hooks are primary and MCP is secondary (ADR-002 amended). Added ADR-011 (daemonless process model for M1–M2), ADR-012 (model-facing rendering), ADR-013 (tier-honest threat model, which amends ADR-003), ADR-014 (compaction-aware state), ADR-015 (secrets at rest and retention), ADR-016 (command classification registry), ADR-017 (runtime language re-confirmation, PROPOSED). ADR-008 and ADR-010 are now gated on evidence. |
 | 0.3 | 2026-11-03 | Windows process-spawn measurement: ADR-011 amended, ADR-021 (resident HTTP-hook server on Windows) PROPOSED. **ADR-017 accepted: Rust.** ADR-002 clarified: hot path is synchronous (no Tokio), and Tokio is allowed only in the M5 daemon. Added ADR-018 (distribution and supply chain), ADR-019 (billing-mode-aware economics), ADR-020 (public-repo data hygiene). |
+| 0.4 | 2026-11-03 | Added ADR-022 (large-file read shaping) and ADR-023 (search-result shaping) as the M1 targets, following M-1 evidence. ADR-001 parser priority now follows measured cost. |
 
 ## Reference architecture
 ```
@@ -48,7 +49,7 @@ Offline:  transcript miner (M-1) · improvement lab -> replay -> policy gate -> 
 8. Log content-free measurement; raw evidence retained encrypted under the retention policy (ADR-015).
 
 ## ADR-001 — Deterministic first, model second (ACCEPT)
-**Decision**: use parsers, schemas, command fingerprints and exact extractors before a model. Model is for relevance/routing and unstructured content under verification. **Why**: predictable correctness and latency. **Tradeoff**: more format-specific code. **v0.2 note**: parser priority comes from the M-1 transcript analysis (top command families by token volume), not from guesswork.
+**Decision**: use parsers, schemas, command fingerprints and exact extractors before a model. Model is for relevance/routing and unstructured content under verification. **Why**: predictable correctness and latency. **Tradeoff**: more format-specific code. **v0.2 note**: parser priority comes from the M-1 transcript analysis (top command families by token volume), not from guesswork. **v0.4:** M-1 shows file reads and search dominate (ADR-022/023), while build/test output is ≈ 1%, so those renderers follow later.
 
 ## ADR-002 — Rust core and adapter boundary; native hooks first (ACCEPT, amended v0.2)
 **Decision**: Rust binaries with a transport-agnostic core. **Hot-path binaries (`aaes hook`, `aaes run`) are synchronous**: no async runtime, minimal dependencies, lazy initialisation. Tokio is allowed only in the long-lived daemon (M5) and the MCP proxy. **Adapter order (amended):** (1) Claude Code native hooks, with `PostToolUse` output replacement preferred and `PreToolUse` command rewrite as fallback, covering both the Bash and PowerShell tools; (2) Codex via instructions + deny-redirect; (3) MCP proxy. **Why**: most tool-output tokens flow through native Bash/Read/Grep, not MCP, so MCP-first intercepts the smallest share. Output replacement keeps exit-code and permission semantics in the host. **Tradeoff**: hook APIs drift between agent versions, so pin versions, feature-detect, and fall back to pass-through. MCP interception does not imply interception of native agent tool calls, and vice versa. Language choice is re-confirmed in ADR-017.
@@ -127,6 +128,31 @@ Observed hook surfaces (verify per pinned version):
 Prefer `PostToolUse` output replacement over rewrite mode, since that avoids the extra process entirely.
 **To verify before accepting**: HTTP-hook header and auth support on pinned Claude Code versions; whether Authenticode signing or the install location (`%LOCALAPPDATA%\Programs`) lowers the spawn floor on typical managed machines; the memory footprint of the resident process.
 **Tradeoff**: a long-lived component arrives earlier than M5 (lifecycle, reattach and late-reply rules from SEC-008 now apply), plus localhost exposure. The gain is removing roughly 50–100 ms per tool call on the platforms most of the target teams use.
+
+## ADR-022 — Large-file read shaping: outline + head + exact ranges (ACCEPT v0.4)
+**Context (M-1):** file-content reads are ≈ 18% of cost-weighted input (Read tool 12.5%, `sed`/`cat` ≈ 5%). Large whole-file reads (> 2k tokens) are 6% on their own, and 70% of them were never edited later in the same context. Unchanged re-reads are negligible (0.1%), so read de-duplication isn't worth building.
+**Decision:** for whole-file reads above a threshold, replace the delivered content with:
+1. a header (`path · N lines · ~T tokens · showing outline + lines 1–H`);
+2. a deterministic **structural outline** (types, members, functions, selectors, top-level keys, headings) with line ranges;
+3. the first H lines verbatim in the host's line-numbered format;
+4. a footer naming exact retrieval: `Read(offset, limit)` or `aaes show <handle> --lines a-b`.
+
+The raw content is kept (ADR-005), so nothing becomes unreachable. **Ask twice, get full:** a repeated whole-file read of the same unchanged file in the same context passes through in full.
+**Outline extractors:** line-oriented and dependency-light (no tree-sitter on the hot path), with one extractor per language family and a generic block fallback. Target well under 1 ms per 10k lines. tree-sitter can come behind a feature flag if accuracy demands it.
+**Why:** saves the content the agent never needs while keeping exact text one call away. It is lossless in the ADR-001 sense, because nothing is paraphrased.
+**Risks:**
+- *Rebound*: the agent fetches most of the file anyway. Measured by MET-015, with a per-family kill switch.
+- *Edit failures*: the agent guesses `old_string` without exact text. Measured by MET-016; the outline footer tells it to read the exact range before editing.
+- Claude Code's own "file was read" bookkeeping for Edit is unaffected, because the Read call itself still executes. Verify in the M1 spike.
+
+## ADR-023 — Search-result shaping (ACCEPT v0.4)
+**Decision:** large search outputs (Grep tool content mode, `grep`/`rg`/`git grep`/`Select-String`) are regrouped by file:
+- each path printed once;
+- line numbers and match text verbatim;
+- matches per file capped, with an exact `+N more` count and a handle;
+- grand totals kept exact.
+
+No reordering within a file; the files' order follows the tool's. **Why:** ≈ 3.7% of input, and repeated path prefixes and over-broad matches are pure overhead. **Tradeoff:** a capped file may hide the relevant match, so the cap is generous and per-file counts make the gap visible.
 
 ## Contracts and pseudo-schemas
 ### Session capability
