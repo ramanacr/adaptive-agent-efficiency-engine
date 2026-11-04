@@ -1,14 +1,14 @@
-use std::fs::File;
-use std::io::BufReader;
+mod install;
+mod mine;
+mod ops;
+
 use std::path::PathBuf;
 
-use aaes_transcripts::analyze::{Settings, Weights};
-use aaes_transcripts::{Agent, Report, Session, analyze_sessions, claude, codex, discover, probe};
-use anyhow::{Context, Result, bail};
-use clap::{Args, Parser, Subcommand};
-use rayon::prelude::*;
+use aaes_runtime::{Runtime, server};
+use anyhow::Result;
+use clap::{Parser, Subcommand, ValueEnum};
 
-/// AAES — Adaptive Agent Efficiency Engine.
+/// AAES — Adaptive Agent Efficiency Engine: shapes large coding-agent tool output without losing facts.
 #[derive(Parser)]
 #[command(name = "aaes", version, about)]
 struct Cli {
@@ -16,160 +16,175 @@ struct Cli {
     cmd: Cmd,
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum ModeArg {
+    Http,
+    Command,
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Analyse local Claude Code / Codex transcripts (read-only) and report where tool-output
     /// tokens go (M-1). Output contains aggregate numbers and command-family names only.
-    Mine(MineArgs),
-}
-
-#[derive(Args)]
-struct MineArgs {
-    /// Claude Code projects dir [default: $CLAUDE_CONFIG_DIR/projects or ~/.claude/projects]
-    #[arg(long)]
-    claude_dir: Option<PathBuf>,
-    /// Codex sessions dir [default: $CODEX_HOME/sessions or ~/.codex/sessions]
-    #[arg(long)]
-    codex_dir: Option<PathBuf>,
-    /// Skip Claude Code transcripts.
-    #[arg(long)]
-    no_claude: bool,
-    /// Skip Codex transcripts.
-    #[arg(long)]
-    no_codex: bool,
-    /// Only sessions starting on/after this date (ISO-8601 prefix, e.g. 2026-09-01).
-    #[arg(long)]
-    since: Option<String>,
-    /// Bytes per token for estimating tool-result tokens [default: calibrated from transcripts].
-    #[arg(long)]
-    bytes_per_token: Option<f64>,
-    /// Go/no-go threshold for tool-result share of cost-weighted input.
-    #[arg(long, default_value_t = 0.20)]
-    gate: f64,
-    /// Hash unknown program names (use before sharing a report).
-    #[arg(long)]
-    anonymize: bool,
-    /// Rows in the top-families table.
-    #[arg(long, default_value_t = 25)]
-    top: usize,
-    /// Write the full JSON report here.
-    #[arg(long)]
-    json: Option<PathBuf>,
-    /// Write the Markdown report here (default: stdout).
-    #[arg(long)]
-    md: Option<PathBuf>,
-    /// Print a structural fingerprint (line/block types only) instead of a report.
-    #[arg(long)]
-    probe: bool,
+    Mine(mine::MineArgs),
+    /// Install AAES hooks into Claude Code settings (backs the file up first).
+    Init {
+        /// `http` (resident server; default on Windows) or `command` (process per call).
+        #[arg(long, value_enum)]
+        mode: Option<ModeArg>,
+        /// Settings file [default: $CLAUDE_CONFIG_DIR/settings.json or ~/.claude/settings.json].
+        #[arg(long)]
+        settings: Option<PathBuf>,
+        /// Server port for http mode [default: from config, 47830].
+        #[arg(long)]
+        port: Option<u16>,
+        /// Print the resulting settings instead of writing them.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove AAES hooks from Claude Code settings and stop the server.
+    Uninstall {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+    /// Hook handler (command mode): event JSON on stdin, response on stdout.
+    Hook {
+        #[arg(long = "by-aaes-init", hide = true)]
+        by_init: bool,
+    },
+    /// Run the resident HTTP hook server.
+    Serve {
+        #[arg(long)]
+        port: Option<u16>,
+        /// Start the server in the background if it isn't running (used by the SessionStart hook).
+        #[arg(long)]
+        ensure: bool,
+        /// Stop a running server.
+        #[arg(long)]
+        stop: bool,
+        #[arg(long = "by-aaes-init", hide = true)]
+        by_init: bool,
+    },
+    /// Print a stored raw output (handles appear in shaped search results).
+    Show {
+        handle: String,
+        /// Line range, e.g. 120-180.
+        #[arg(long)]
+        lines: Option<String>,
+        /// Case-insensitive substring filter.
+        #[arg(long)]
+        grep: Option<String>,
+        #[arg(long)]
+        head: Option<usize>,
+        #[arg(long)]
+        tail: Option<usize>,
+    },
+    /// Summarise local shaping events (savings, pass-through, rebound).
+    Report {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Turn shaping off (kill switch).
+    Disable,
+    /// Turn shaping back on.
+    Enable,
 }
 
 fn main() -> Result<()> {
     match Cli::parse().cmd {
-        Cmd::Mine(a) => mine(a),
+        Cmd::Mine(a) => mine::run(a),
+        Cmd::Init {
+            mode,
+            settings,
+            port,
+            dry_run,
+        } => init(mode, settings, port, dry_run),
+        Cmd::Uninstall { settings } => uninstall(settings),
+        Cmd::Hook { .. } => ops::hook_cmd(),
+        Cmd::Serve {
+            port, ensure, stop, ..
+        } => ops::serve_cmd(port, ensure, stop),
+        Cmd::Show {
+            handle,
+            lines,
+            grep,
+            head,
+            tail,
+        } => ops::show_cmd(&handle, lines.as_deref(), grep.as_deref(), head, tail),
+        Cmd::Report { json } => ops::report_cmd(json),
+        Cmd::Disable => ops::set_enabled(false),
+        Cmd::Enable => ops::set_enabled(true),
     }
 }
 
-fn mine(a: MineArgs) -> Result<()> {
-    if a.bytes_per_token.is_some_and(|b| b.is_nan() || b <= 0.0) {
-        bail!("--bytes-per-token must be > 0");
-    }
-    if !(0.0..=1.0).contains(&a.gate) {
-        bail!("--gate must be between 0 and 1");
-    }
-
-    let mut roots: Vec<(Agent, PathBuf)> = Vec::new();
-    if !a.no_claude {
-        if let Some(p) = a.claude_dir.clone().or_else(discover::default_claude_root) {
-            roots.push((Agent::ClaudeCode, p));
-        }
-    }
-    if !a.no_codex {
-        if let Some(p) = a.codex_dir.clone().or_else(discover::default_codex_root) {
-            roots.push((Agent::Codex, p));
-        }
-    }
-
-    let mut files: Vec<(Agent, PathBuf)> = Vec::new();
-    for (agent, root) in &roots {
-        if !root.is_dir() {
-            eprintln!(
-                "aaes: {} transcripts not found at {}",
-                agent.label(),
-                root.display()
-            );
-            continue;
-        }
-        let found = discover::jsonl_files(root);
-        eprintln!(
-            "aaes: {} - {} transcript files under {}",
-            agent.label(),
-            found.len(),
-            root.display()
-        );
-        files.extend(found.into_iter().map(|f| (*agent, f)));
-    }
-    if files.is_empty() {
-        bail!("no transcript files found");
-    }
-
-    if a.probe {
-        for (agent, _) in &roots {
-            let list: Vec<PathBuf> = files
-                .iter()
-                .filter(|(ag, _)| ag == agent)
-                .map(|(_, p)| p.clone())
-                .collect();
-            println!("## {} (latest {} files)", agent.label(), list.len().min(50));
-            for (sig, n) in probe::probe(*agent, &list, 50) {
-                println!("{n:>8}  {sig}");
-            }
-        }
+fn init(
+    mode: Option<ModeArg>,
+    settings: Option<PathBuf>,
+    port: Option<u16>,
+    dry_run: bool,
+) -> Result<()> {
+    let rt = Runtime::from_env();
+    let mode = match mode {
+        Some(ModeArg::Http) => install::Mode::Http,
+        Some(ModeArg::Command) => install::Mode::Command,
+        None => install::Mode::default_for_platform(),
+    };
+    let port = port.unwrap_or(rt.cfg.port);
+    let path = settings.unwrap_or_else(install::default_settings_path);
+    let exe = install::exe_for_command(&std::env::current_exe()?);
+    let token = server::token(&rt.home)?;
+    let mut s = install::read_settings(&path)?;
+    install::apply(&mut s, mode, &exe, port, &token);
+    if dry_run {
+        println!("{}", serde_json::to_string_pretty(&s)?);
         return Ok(());
     }
-
-    let sessions: Vec<Session> = files
-        .par_iter()
-        .flat_map_iter(|(agent, path)| -> Vec<Session> {
-            let Ok(f) = File::open(path) else {
-                return Vec::new();
-            };
-            let r = BufReader::with_capacity(1 << 16, f);
-            let mut out = match agent {
-                Agent::ClaudeCode => claude::parse_reader(r),
-                Agent::Codex => vec![codex::parse_reader(r)],
-            };
-            // Claude Code stores sub-agent transcripts under `<session>/subagents/`.
-            if path.components().any(|c| c.as_os_str() == "subagents") {
-                for s in &mut out {
-                    s.sidechain = true;
-                }
-            }
-            out
-        })
-        .collect();
-
-    let settings = Settings {
-        bytes_per_token: a.bytes_per_token,
-        weights: Weights::default(),
-        gate: a.gate,
-        anonymize: a.anonymize,
-        since: a.since,
-    };
-    let accs = analyze_sessions(&sessions, &settings);
-    let report = Report::build(accs, settings);
-
-    if let Some(p) = &a.json {
-        let f = File::create(p).with_context(|| format!("creating {}", p.display()))?;
-        serde_json::to_writer_pretty(f, &report)?;
-        eprintln!("aaes: JSON report written to {}", p.display());
-    }
-    let md = report.to_markdown(a.top);
-    match &a.md {
-        Some(p) => {
-            std::fs::write(p, md).with_context(|| format!("writing {}", p.display()))?;
-            eprintln!("aaes: Markdown report written to {}", p.display());
+    let backup = install::write_settings(&path, &s)?;
+    eprintln!(
+        "aaes: hooks installed in {} ({} mode)",
+        path.display(),
+        if mode == install::Mode::Http {
+            "http"
+        } else {
+            "command"
         }
-        None => print!("{md}"),
+    );
+    if let Some(b) = backup {
+        eprintln!("aaes: previous settings backed up to {}", b.display());
+    }
+    if mode == install::Mode::Http {
+        eprintln!(
+            "aaes: the server starts automatically with each Claude Code session (port {port})."
+        );
+    }
+    eprintln!(
+        "aaes: data folder {} · undo with `aaes uninstall`",
+        rt.home.display()
+    );
+    Ok(())
+}
+
+fn uninstall(settings: Option<PathBuf>) -> Result<()> {
+    let rt = Runtime::from_env();
+    let path = settings.unwrap_or_else(install::default_settings_path);
+    let mut s = install::read_settings(&path)?;
+    let removed = install::strip_ours(&mut s);
+    if removed > 0 {
+        let backup = install::write_settings(&path, &s)?;
+        eprintln!(
+            "aaes: removed {removed} hook entries from {}",
+            path.display()
+        );
+        if let Some(b) = backup {
+            eprintln!("aaes: previous settings backed up to {}", b.display());
+        }
+    } else {
+        eprintln!("aaes: no AAES hooks found in {}", path.display());
+    }
+    if let Ok(t) = server::token(&rt.home) {
+        if server::shutdown(rt.cfg.port, &t) {
+            eprintln!("aaes: server stopped");
+        }
     }
     Ok(())
 }

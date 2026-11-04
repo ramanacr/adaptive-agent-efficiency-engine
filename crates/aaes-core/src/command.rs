@@ -190,6 +190,20 @@ pub fn family(cmd: &str, anonymize: bool) -> String {
     fam
 }
 
+/// For a command made of exactly one segment (no `&&`, `||`, `|`, `;`, newline or redirect), the
+/// program (lower-cased, extension stripped) and its arguments with quotes removed.
+pub fn single_invocation(cmd: &str) -> Option<(String, Vec<String>)> {
+    if cmd.contains('>') || cmd.contains('<') {
+        return None;
+    }
+    let segs = split_segments(cmd);
+    if segs.len() != 1 {
+        return None;
+    }
+    let (program, rest) = first_program(&segs[0])?;
+    Some((program, rest.args))
+}
+
 struct Rest {
     args: Vec<String>,
     is_path: bool,
@@ -380,6 +394,22 @@ mod tests {
         let a = family("./scripts/deploy-internal.sh prod", true);
         assert!(a.starts_with("other:"), "{a}");
         assert!(!a.contains("deploy"));
+    }
+
+    #[test]
+    fn single_invocation_only_for_one_segment() {
+        use super::single_invocation;
+        assert_eq!(
+            single_invocation(r#"cat "src/My App/a.cs""#),
+            Some(("cat".into(), vec!["src/My App/a.cs".into()]))
+        );
+        assert_eq!(
+            single_invocation("Get-Content -Raw a.cs"),
+            Some(("get-content".into(), vec!["-Raw".into(), "a.cs".into()]))
+        );
+        assert_eq!(single_invocation("cat a | head"), None);
+        assert_eq!(single_invocation("cat a > b"), None);
+        assert_eq!(single_invocation("cd x && cat a"), None);
     }
 
     #[test]

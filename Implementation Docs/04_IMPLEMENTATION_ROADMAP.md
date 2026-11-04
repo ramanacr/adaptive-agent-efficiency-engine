@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v0.5
+# Implementation Roadmap — AAES v0.6
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -10,6 +10,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 0.3 | 2026-11-03 | Rust accepted, so the M0 spike becomes a permanent cold-start CI benchmark. M-1 tool implemented (`aaes mine`). Release pipeline added to M1 (signed binaries) and team policy to M3. Public/private corpus split. Repository layout reflects the real workspace. |
 | 0.4 | 2026-11-03 | **M1 re-targeted to read and search shaping** (ADR-022/023) on M-1 evidence. Build/test parsers moved to M3. Sub-agent hook coverage and rebound/Edit-failure metrics added to M1/M2. |
 | 0.5 | 2026-11-04 | M1 spike done (`docs/spikes/M1-hook-spike.md`): all four assumptions confirmed; ADR-021 accepted, so `aaes serve` (HTTP hooks) is part of M1 on Windows. |
+| 0.6 | 2026-11-04 | **M1 increment 1 delivered** and contract-tested with Claude Code (`docs/spikes/M1-contract-test.md`). Status markers added to M1; repository layout updated to the real crates. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
@@ -49,6 +50,16 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - Standard-tier namespacing and negative tests (SEC-001 Standard, SEC-002, SEC-004).
 - Events for rebound (MET-015) and Edit failures (MET-016). Per-session CLI savings report with estimate labels, in both billing views (MET-013).
 - Release pipeline v0: signed GitHub Release binaries for Windows/Linux/macOS, SBOM, `cargo-deny` gate (FUN-023, SEC-015).
+
+**Status (increment 1, 2026-11-04):**
+- ✅ `aaes init` / `uninstall` (settings backup, marker-based removal, idempotent)
+- ✅ `aaes serve` (HTTP, token, keep-alive, health/shutdown, retention sweep), auto-started by the `SessionStart` hook
+- ✅ Read shaping: head + complete outline with ranges; ranged pass-through; ask-twice per context; sub-agent contexts; compaction/clear/resume reset. Shell `cat`/`type`/`Get-Content` too.
+- ✅ Search shaping (Grep tool, grep/rg/git grep/Select-String): grouped, relative paths, exact totals, capped lines kept behind a handle; `aaes show`
+- ✅ Event log + `aaes report` (saved, pass-through, rebound); kill switch (`aaes disable`, `AAES_RAW=1`)
+- ✅ Contract test with Claude Code 2.1.233: 5 scenarios pass. +27 ms p50 per hooked call; ≈ 70% saving on a 13k-token read; rebound 96 bytes on read-then-edit.
+- ☐ SEC-012 encryption at rest · SEC-013 redaction (stored search outputs are plaintext in the user-private data folder until then)
+- ☐ MET-016 Edit-failure events (`PostToolUseFailure`) · scripted, version-pinned contract test · release pipeline (FUN-023)
 
 **Exit**: read/search fidelity goldens pass (exact retrieval of every omitted range; exact match totals); no tool regressions; delivered ≤ raw for every result; hook latency measured; two concurrent sessions isolated; measurable direct reduction on shaped families.
 
@@ -98,17 +109,15 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 ```
 Cargo.toml                 # workspace (Rust, edition 2024)
 crates/
-  aaes-cli/                # `aaes` binary: mine (M-1) · later init/uninstall/hook/run/show/report/doctor
+  aaes-cli/                # `aaes` binary: mine · init/uninstall · hook · serve · show · report · enable/disable
+  aaes-core/               # ✅ pure: command families, outline extractors, read/search shaping (no I/O)
+  aaes-runtime/            # ✅ hook protocol, session state, artifact store, events, HTTP server
   aaes-transcripts/        # ✅ transcript parsing + analysis (Claude Code, Codex)
   # planned, added when first needed (no empty crates):
-  aaes-core/               # session model, registry, policy, routing (sync, hot path)
-  aaes-adapter-claude/     # Claude Code hook handlers (PostToolUse/PreToolUse/SessionStart/Compact)
-  aaes-runner/             # `aaes run`: process exec, streaming, signals, encodings
-  aaes-parsers/            # deterministic extracts per command family
-  aaes-render/             # native-format renderers + footer
-  aaes-evidence/           # encrypted artifact storage / provenance / retention
+  aaes-runner/             # `aaes run` rewrite mode (if needed beyond PostToolUse)
   aaes-memory/             # SQLite, FTS5, optional vector trait (M4)
   aaes-adapter-codex/, aaes-mcp/, aaes-inference/, aaes-improvement/   # M3–M6
+spikes/hook-probe/         # M1 spike probe (not product code)
 registry/commands.toml
 tests/fixtures/{bash,powershell}/ + PROVENANCE.md
 bench-private/             # git-ignored private corpus

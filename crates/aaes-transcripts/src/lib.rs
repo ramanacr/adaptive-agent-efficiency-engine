@@ -7,11 +7,13 @@
 pub mod analyze;
 pub mod claude;
 pub mod codex;
-pub mod command;
 pub mod discover;
 pub mod model;
 pub mod probe;
 pub mod report;
+
+/// Command-family parsing lives in `aaes-core`; re-exported for existing callers.
+pub use aaes_core::command;
 
 pub use analyze::{Settings, analyze_sessions};
 pub use model::{Agent, Event, Session, Usage};

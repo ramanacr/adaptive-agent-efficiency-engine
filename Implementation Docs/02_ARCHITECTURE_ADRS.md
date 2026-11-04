@@ -1,4 +1,4 @@
-# Architecture and Architecture Decision Records — AAES v0.5
+# Architecture and Architecture Decision Records — AAES v0.6
 
 ## 0. Change log
 | Version | Date | Change |
@@ -8,6 +8,7 @@
 | 0.3 | 2026-11-03 | Windows process-spawn measurement: ADR-011 amended, ADR-021 (resident HTTP-hook server on Windows) PROPOSED. **ADR-017 accepted: Rust.** ADR-002 clarified: hot path is synchronous (no Tokio), and Tokio is allowed only in the M5 daemon. Added ADR-018 (distribution and supply chain), ADR-019 (billing-mode-aware economics), ADR-020 (public-repo data hygiene). |
 | 0.4 | 2026-11-03 | Added ADR-022 (large-file read shaping) and ADR-023 (search-result shaping) as the M1 targets, following M-1 evidence. ADR-001 parser priority now follows measured cost. |
 | 0.5 | 2026-11-04 | M1 spike (`docs/spikes/M1-hook-spike.md`): **ADR-021 accepted** (HTTP hooks + resident `aaes serve` on Windows). ADR-002 hook table confirmed for Claude Code 2.1.233, with output shapes recorded. |
+| 0.6 | 2026-11-04 | ADR-011 amended (M1 implementation): session state is JSON + files, with SQLite deferred to M4. ADR-021 implementation notes: a Windows handle-inheritance fix and `--port` in the ensure command. |
 
 ## Reference architecture
 ```
@@ -88,6 +89,7 @@ Observed hook surfaces (confirmed for Claude Code 2.1.233 by the M1 spike, `docs
 ## ADR-011 — Daemonless process model for M1–M2 (ACCEPT)
 **Decision**: `aaes hook` and `aaes run` are short-lived processes. Each one opens its session's SQLite database (WAL mode) and content-addressed store, does its work and exits. A long-lived daemon (local IPC: named pipe on Windows, UDS on Unix) is introduced only when a component needs warm state, e.g. M5 inference. **Why**: hook handlers are per-call processes anyway, and this removes service lifecycle, IPC, reattach and cancellation-routing complexity until it's needed. **Tradeoff**: per-call cold start and SQLite open cost, which must be measured against the 20 ms p95 budget from day one. Per-session databases keep write contention negligible.
 **Measured (2026-11-03):** on a managed Windows laptop, starting *any* unsigned executable outside System32 costs 50–100 ms (endpoint security), whatever the language. Daemonless therefore stays the default on Linux/macOS and the fallback on Windows. The preferred Windows path is ADR-021.
+**Amended v0.6 (M1 implementation):** session state is a small per-session `state.json` (ask-twice counters and context epochs per main/sub-agent context) plus files for raw artifacts and `events.jsonl`. SQLite is deferred to M4, when full-text search needs it. In the resident server, state updates are serialised by a process mutex. In command mode, concurrent hooks for parallel tool calls can race on `state.json`; the worst case is an extra full read, never data loss of tool output.
 
 ## ADR-012 — Model-facing rendering is native text, not JSON (ACCEPT)
 **Decision**: the `OptimizedToolResult` envelope is internal. The agent sees compact text in the tool's own diagnostic format with exact diagnostics verbatim, plus one footer line (counts, exit code, omissions, handle). Results below a minimum size (default ~400 tokens) pass through untouched. Recovery guidance is injected once per session (`SessionStart.additionalContext` / `AGENTS.md`), not repeated in every result. **Why**: a JSON envelope costs tokens, can make small outputs larger, and models read native tool formats better. **Tradeoff**: per-tool renderers to maintain.
@@ -138,6 +140,12 @@ Still open:
 - Linux/macOS default (measure first);
 - memory footprint of the resident process;
 - whether signing or install location lowers the spawn floor for the fallback.
+
+**Implementation notes (M1, v0.6):**
+- `SessionStart` runs `aaes serve --ensure --port <p>`. It applies the event, starts the server detached if the health check fails, and prints nothing.
+- On Windows, the std handles are made non-inheritable before spawning. Otherwise the server inherits the hook's pipes and Claude Code waits for them, stalling the session (found in the contract test).
+- Token: random, stored in the user-private data folder and in the settings `env` block, which Claude Code interpolates into the HTTP-hook header (verified).
+- Measured: **+27 ms p50** per hooked call with keep-alive.
 
 **Tradeoff**: a long-lived component arrives earlier than M5 (lifecycle, reattach and late-reply rules from SEC-008 now apply), plus localhost exposure. The gain is removing roughly 50–100 ms per tool call on the platforms most of the target teams use.
 
