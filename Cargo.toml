@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/aaes-cli", "crates/aaes-transcripts"]
+members = ["crates/aaes-cli", "crates/aaes-transcripts", "spikes/hook-probe"]
 
 [workspace.package]
 version = "0.1.0"

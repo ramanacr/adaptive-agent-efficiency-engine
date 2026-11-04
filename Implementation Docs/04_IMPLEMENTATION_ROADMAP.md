@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v0.4
+# Implementation Roadmap — AAES v0.5
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -9,6 +9,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 0.2 | 2026-11-03 | Re-sequenced per design review (`05_DESIGN_REVIEW.md`): added M-1 Measure; the first vertical slice targets Claude Code native hooks instead of MCP; daemonless M1 (ADR-011); Standard-tier scope (ADR-013); MCP/Codex moved to M3; local model (M5) and policy learning + Hardened tier (M6) gated on evidence. Added a language spike (ADR-017) to M0. |
 | 0.3 | 2026-11-03 | Rust accepted, so the M0 spike becomes a permanent cold-start CI benchmark. M-1 tool implemented (`aaes mine`). Release pipeline added to M1 (signed binaries) and team policy to M3. Public/private corpus split. Repository layout reflects the real workspace. |
 | 0.4 | 2026-11-03 | **M1 re-targeted to read and search shaping** (ADR-022/023) on M-1 evidence. Build/test parsers moved to M3. Sub-agent hook coverage and rebound/Edit-failure metrics added to M1/M2. |
+| 0.5 | 2026-11-04 | M1 spike done (`docs/spikes/M1-hook-spike.md`): all four assumptions confirmed; ADR-021 accepted, so `aaes serve` (HTTP hooks) is part of M1 on Windows. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
@@ -31,14 +32,14 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 **Exit**: arms A/A′/B reproducible with measured tokens, cache usage and quality outcomes; cold-start benchmark green.
 
 ## M1 — First vertical slice: read and search shaping via Claude Code hooks (deterministic)
-- **Spike first (1–2 days):**
-  - (a) `PostToolUse.updatedToolOutput` replaces Read, Grep and Bash/PowerShell results for the pinned Claude Code version;
-  - (b) hooks fire for **sub-agent** tool calls;
-  - (c) a shaped Read still satisfies Claude Code's read-before-Edit check;
-  - (d) end-to-end hook latency for command vs HTTP hooks on Windows (ADR-021).
-
-  Record the results in the coverage matrix (FUN-012).
-- `aaes init` / `aaes uninstall` that install and remove hooks with settings backup (FUN-020).
+- ✅ **Spike** (`docs/spikes/M1-hook-spike.md`):
+  - `updatedToolOutput` replaces Read/Grep/Bash/PowerShell output;
+  - hooks fire inside sub-agents;
+  - shaped Read still allows Edit;
+  - Windows hook overhead: command +362 ms, HTTP +71 ms per call (p50).
+- **`aaes serve`** (ADR-021): per-user resident HTTP hook server on 127.0.0.1 with token auth, started by `aaes init`/at login, with health check and command-hook fallback. Synchronous and lightweight. Measure and cut the remaining HTTP overhead (keep-alive).
+- **Per-version contract test**: replaced output must reach the model (shape mismatches are silently ignored).
+- `aaes init` / `aaes uninstall` that install and remove hooks with settings backup (FUN-020). Matcher limited to `Read|Grep|Bash|PowerShell`.
 - **Read shaping** (FUN-025, ADR-022): threshold, outline extractors (C#, TS/JS, HTML, SCSS/CSS, JSON/YAML, Markdown, generic), head lines, footer, "ask twice, get full". Covers the Read tool plus shell `cat`/`type`/`Get-Content` single-file reads.
 - **Search shaping** (FUN-026, ADR-023): Grep tool content mode, `grep`/`rg`/`git grep`/`Select-String`.
 - Command registry with pass-through defaults; long-running/interactive streaming; Windows execution fidelity (FUN-017, FUN-018).
@@ -120,10 +121,10 @@ Input: a Claude Code `PostToolUse` event for a **Read** tool call without `offse
 - small-file and ranged-read pass-through; "ask twice";
 - compaction reset; CRLF/UTF-8/UTF-16 files; Windows paths.
 
-No LLM, no vectors, no daemon (unless ADR-021 is accepted after the spike).
+No LLM, no vectors. On Windows the handler runs inside `aaes serve` (ADR-021); elsewhere as a command hook until measured.
 
 ## Decision log / open technical investigations
-1. Which agent hooks reliably cover shell/file/MCP calls for pinned Claude Code and Codex versions? **Partial findings (v0.2):** Claude Code exposes `PreToolUse.updatedInput`, `PostToolUse.updatedToolOutput`, `PreCompact`/`PostCompact`, `SessionStart.source`; confirm `updatedToolOutput` coverage for built-in tools. Codex hooks are deny-only, cannot replace output, cover Bash only, and fail open. Re-verify per pinned version.
+1. Which agent hooks reliably cover shell/file/MCP calls for pinned Claude Code and Codex versions? **Answered for Claude Code 2.1.233 (M1 spike):** output replacement works for Read/Grep/Bash/PowerShell, including inside sub-agents. **Earlier findings (v0.2):** Claude Code exposes `PreToolUse.updatedInput`, `PostToolUse.updatedToolOutput`, `PreCompact`/`PostCompact`, `SessionStart.source`; confirm `updatedToolOutput` coverage for built-in tools. Codex hooks are deny-only, cannot replace output, cover Bash only, and fail open. Re-verify per pinned version.
 2. Which tokenizer is authoritative per provider/model and which input usage fields are available? **Partial findings (v0.2):** no public local Claude tokenizer, so use a calibrated estimator; transcripts carry usage fields including cache-write/read.
 3. What local model performs best for relevance and decision classification under CPU-only 4/8/16GB scenarios? *(Only if the M5 gate is met.)*
 4. Is semantic retrieval gain worth an embedding model and index under session workloads?

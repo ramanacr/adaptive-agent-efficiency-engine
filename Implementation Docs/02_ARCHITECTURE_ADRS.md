@@ -1,4 +1,4 @@
-# Architecture and Architecture Decision Records — AAES v0.4
+# Architecture and Architecture Decision Records — AAES v0.5
 
 ## 0. Change log
 | Version | Date | Change |
@@ -7,6 +7,7 @@
 | 0.2 | 2026-11-03 | Applied design review (`05_DESIGN_REVIEW.md`). Reference architecture is now adapter-first: Claude Code hooks are primary and MCP is secondary (ADR-002 amended). Added ADR-011 (daemonless process model for M1–M2), ADR-012 (model-facing rendering), ADR-013 (tier-honest threat model, which amends ADR-003), ADR-014 (compaction-aware state), ADR-015 (secrets at rest and retention), ADR-016 (command classification registry), ADR-017 (runtime language re-confirmation, PROPOSED). ADR-008 and ADR-010 are now gated on evidence. |
 | 0.3 | 2026-11-03 | Windows process-spawn measurement: ADR-011 amended, ADR-021 (resident HTTP-hook server on Windows) PROPOSED. **ADR-017 accepted: Rust.** ADR-002 clarified: hot path is synchronous (no Tokio), and Tokio is allowed only in the M5 daemon. Added ADR-018 (distribution and supply chain), ADR-019 (billing-mode-aware economics), ADR-020 (public-repo data hygiene). |
 | 0.4 | 2026-11-03 | Added ADR-022 (large-file read shaping) and ADR-023 (search-result shaping) as the M1 targets, following M-1 evidence. ADR-001 parser priority now follows measured cost. |
+| 0.5 | 2026-11-04 | M1 spike (`docs/spikes/M1-hook-spike.md`): **ADR-021 accepted** (HTTP hooks + resident `aaes serve` on Windows). ADR-002 hook table confirmed for Claude Code 2.1.233, with output shapes recorded. |
 
 ## Reference architecture
 ```
@@ -54,10 +55,10 @@ Offline:  transcript miner (M-1) · improvement lab -> replay -> policy gate -> 
 ## ADR-002 — Rust core and adapter boundary; native hooks first (ACCEPT, amended v0.2)
 **Decision**: Rust binaries with a transport-agnostic core. **Hot-path binaries (`aaes hook`, `aaes run`) are synchronous**: no async runtime, minimal dependencies, lazy initialisation. Tokio is allowed only in the long-lived daemon (M5) and the MCP proxy. **Adapter order (amended):** (1) Claude Code native hooks, with `PostToolUse` output replacement preferred and `PreToolUse` command rewrite as fallback, covering both the Bash and PowerShell tools; (2) Codex via instructions + deny-redirect; (3) MCP proxy. **Why**: most tool-output tokens flow through native Bash/Read/Grep, not MCP, so MCP-first intercepts the smallest share. Output replacement keeps exit-code and permission semantics in the host. **Tradeoff**: hook APIs drift between agent versions, so pin versions, feature-detect, and fall back to pass-through. MCP interception does not imply interception of native agent tool calls, and vice versa. Language choice is re-confirmed in ADR-017.
 
-Observed hook surfaces (verify per pinned version):
+Observed hook surfaces (confirmed for Claude Code 2.1.233 by the M1 spike, `docs/spikes/M1-hook-spike.md`; re-verify per pinned version):
 | Agent | Rewrite input | Replace output | Lifecycle signals |
 |---|---|---|---|
-| Claude Code | `PreToolUse` → `updatedInput` | `PostToolUse` → `updatedToolOutput` (confirm built-in tool coverage) | `SessionStart.source`, `PreCompact`/`PostCompact`, `PostToolBatch`, `transcript_path` |
+| Claude Code | `PreToolUse` → `updatedInput` | `PostToolUse` → `updatedToolOutput`: **confirmed for Read (`file.content`), Grep (`content`), Bash/PowerShell (`stdout`)**, including inside sub-agents. A value that doesn't match the shape is silently ignored | `SessionStart.source`, `PreCompact`/`PostCompact`, `PostToolBatch`, `transcript_path` |
 | Codex CLI | No (deny only) | No (`updatedMCPToolOutput` rejected) | Bash only; hooks fail open |
 
 ## ADR-003 — Session physical namespaces (ACCEPT, scope clarified by ADR-013)
@@ -118,7 +119,7 @@ Observed hook surfaces (verify per pinned version):
 ## ADR-020 — Public-repo data hygiene (ACCEPT v0.3)
 **Decision**: the repository contains only synthetic fixtures or fixtures from public OSS repositories with provenance and license recorded (`tests/fixtures/PROVENANCE.md`). Real transcripts, proprietary code and raw tool output stay in git-ignored `bench-private/`. Reports from `aaes mine` are aggregate-only and support `--anonymize` before sharing. CI runs a secret scan on every push. **Why**: the project is public, while the most valuable benchmark data (team repos, transcripts) is private. **Tradeoff**: published benchmark results must rely on the public corpus; private results can be summarised but not reproduced publicly.
 
-## ADR-021 — Resident hook server for Windows (PROPOSED v0.3)
+## ADR-021 — Resident hook server for Windows (ACCEPTED v0.5)
 **Context**: ADR-011 assumed per-call process cost is small. Measurement shows a 50–100 ms floor per process start on managed Windows machines, caused by endpoint security rather than AAES. Rewrite mode (`aaes run -- <cmd>`) pays it on top of the tool's own process.
 **Proposal**: on Windows, run a lightweight per-user resident process (`aaes serve`: synchronous, a small HTTP/1.1 server, no Tokio) bound to `127.0.0.1`, and register Claude Code hooks as **`type: "http"`** so no process is spawned per call. Requirements:
 - authentication with a per-user random token in a request header, so other local users can't use the port;
@@ -126,7 +127,18 @@ Observed hook surfaces (verify per pinned version):
 - automatic fallback to command hooks when it isn't running.
 
 Prefer `PostToolUse` output replacement over rewrite mode, since that avoids the extra process entirely.
-**To verify before accepting**: HTTP-hook header and auth support on pinned Claude Code versions; whether Authenticode signing or the install location (`%LOCALAPPDATA%\Programs`) lowers the spawn floor on typical managed machines; the memory footprint of the resident process.
+**Verified (M1 spike, 2026-11-04, Claude Code 2.1.233, Windows):**
+- HTTP hooks support bearer-token headers via `allowedEnvVars`.
+- Measured overhead per tool call, p50: no hook 14 ms; **command hook 376 ms (+362)**; **HTTP hook 85 ms (+71)**.
+- Default on Windows: HTTP hooks to `aaes serve`, with command hooks as fallback.
+- Hook matcher limited to shaped tools (`Read|Grep|Bash|PowerShell`).
+
+Still open:
+- keep-alive and other ways to cut the remaining ~70 ms;
+- Linux/macOS default (measure first);
+- memory footprint of the resident process;
+- whether signing or install location lowers the spawn floor for the fallback.
+
 **Tradeoff**: a long-lived component arrives earlier than M5 (lifecycle, reattach and late-reply rules from SEC-008 now apply), plus localhost exposure. The gain is removing roughly 50–100 ms per tool call on the platforms most of the target teams use.
 
 ## ADR-022 — Large-file read shaping: outline + head + exact ranges (ACCEPT v0.4)

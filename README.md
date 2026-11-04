@@ -6,7 +6,7 @@
 
 It runs the real tool unchanged, keeps the full output in an encrypted, session-private store, and gives the agent a compact, validated rendering in the tool's native format, plus a handle (`aaes show <handle>`) for retrieving the rest on demand. It is deterministic-first, written in Rust for minimal per-call overhead, and falls back to the raw output whenever unsure. It reports savings for both **subscription** (usage headroom) and **API** (dollars) sessions.
 
-> **Status:** design v0.3 + milestone **M-1**. The first tool, `aaes mine`, measures where tool-output tokens go in your existing agent sessions. The hook-based reducer (M1) comes next. See the [roadmap](Implementation%20Docs/04_IMPLEMENTATION_ROADMAP.md).
+> **Status:** design v0.5 · M-1 done (GO) · M1 spike done. The first tool, `aaes mine`, measures where tool-output tokens go in your existing agent sessions. The hook-based reducer (M1) comes next. See the [roadmap](Implementation%20Docs/04_IMPLEMENTATION_ROADMAP.md).
 
 ## Quick start: measure your own sessions (M-1)
 ```bash
@@ -27,6 +27,7 @@ The report contains aggregate numbers and command-family names only, never trans
 | [04 Implementation roadmap](Implementation%20Docs/04_IMPLEMENTATION_ROADMAP.md) | M-1…M6 with exit criteria, first vertical slice, repository layout |
 | [05 Design review](Implementation%20Docs/05_DESIGN_REVIEW.md) | Review of v0.1 and the recommendations applied |
 | [06 Threat model](Implementation%20Docs/06_THREAT_MODEL.md) | Adversaries, per-tier guarantees and non-guarantees, mandatory tests |
+| [M1 hook spike](docs/spikes/M1-hook-spike.md) | Verified Claude Code hook capabilities (output replacement, sub-agents, Edit, latency) |
 
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md). Never commit private data: real transcripts, proprietary code or raw tool output belong in the git-ignored `bench-private/`. Security issues: [SECURITY.md](SECURITY.md).
