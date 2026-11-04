@@ -230,6 +230,7 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
     let bpt = rt.cfg.shape.bytes_per_token;
     let mut by: BTreeMap<(String, String), Agg> = BTreeMap::new();
     let (mut sessions, mut rebound_bytes, mut rebound_n) = (0u64, 0u64, 0u64);
+    let mut fam: BTreeMap<&'static str, Family> = BTreeMap::new();
     if let Ok(rd) = std::fs::read_dir(rt.home.join("sessions")) {
         for e in rd.flatten() {
             let Ok(text) = std::fs::read_to_string(e.path().join("events.jsonl")) else {
@@ -250,6 +251,14 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                 if v["rebound"].as_bool() == Some(true) {
                     rebound_bytes += raw;
                     rebound_n += 1;
+                    let f = fam.entry(family_of(v["kind"].as_str())).or_default();
+                    f.follow_n += 1;
+                    f.follow_bytes += raw;
+                }
+                if v["action"].as_str() == Some("shaped") {
+                    let f = fam.entry(family_of(v["kind"].as_str())).or_default();
+                    f.shaped_n += 1;
+                    f.saved += raw.saturating_sub(v["delivered_bytes"].as_u64().unwrap_or(0));
                 }
             }
         }
@@ -270,7 +279,14 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
             serde_json::json!({
                 "sessions": sessions, "rows": rows, "saved_bytes": saved,
                 "rebound_bytes": rebound_bytes, "rebound_events": rebound_n,
-                "net_saved_tokens_est": tok(saved).saturating_sub(tok(rebound_bytes)),
+                "net_saved_tokens_est": tok(saved) as i64 - tok(rebound_bytes) as i64,
+                "families": fam.iter().map(|(k, f)| (k.to_string(), serde_json::json!({
+                    "shaped": f.shaped_n, "saved_bytes": f.saved,
+                    "follow_ups": f.follow_n, "follow_up_bytes": f.follow_bytes,
+                    "net_tokens_est": f.net_tokens(bpt),
+                    "follow_ups_per_shaped": f.follow_ups_per_shaped(),
+                    "ok": f.ok(bpt),
+                }))).collect::<serde_json::Map<String, Value>>(),
                 "bytes_per_token": bpt
             })
         );
@@ -293,12 +309,72 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
         );
     }
     println!(
-        "\nSaved by shaping: ~{} tokens · rebound (ranged/full re-reads of shaped files): ~{} tokens in {rebound_n} reads · net: ~{} tokens (estimates at {bpt} bytes/token)",
+        "\nSaved by shaping: ~{} tokens · follow-up reads of shaped files: ~{} tokens in {rebound_n} reads · net: ~{} tokens (estimates at {bpt} bytes/token)",
         tok(saved),
         tok(rebound_bytes),
         tok(saved) as i64 - tok(rebound_bytes) as i64
     );
+    if !fam.is_empty() {
+        println!(
+            "\n{:<8} {:>7} {:>12} {:>11} {:>12} {:>13}  MET-015 (net > 0, <= 1 follow-up per shaped)",
+            "family", "shaped", "saved tok", "follow-ups", "net tok", "per shaped"
+        );
+        for (k, f) in &fam {
+            println!(
+                "{k:<8} {:>7} {:>12} {:>11} {:>12} {:>13.2}  {}",
+                f.shaped_n,
+                tok(f.saved),
+                f.follow_n,
+                f.net_tokens(bpt),
+                f.follow_ups_per_shaped(),
+                if f.shaped_n == 0 {
+                    "no data"
+                } else if f.ok(bpt) {
+                    "ok"
+                } else {
+                    "review: raise the threshold or disable this family"
+                }
+            );
+        }
+    }
     Ok(())
+}
+
+/// Shaping family for MET-015: whole-file reads (Read tool or shell) vs search.
+fn family_of(kind: Option<&str>) -> &'static str {
+    match kind {
+        Some("read" | "shell_read") => "read",
+        Some("search") => "search",
+        _ => "other",
+    }
+}
+
+/// Per-family totals for MET-015: net saving and follow-up calls per shaped result.
+#[derive(Default)]
+struct Family {
+    shaped_n: u64,
+    saved: u64,
+    follow_n: u64,
+    follow_bytes: u64,
+}
+
+impl Family {
+    fn net_tokens(&self, bpt: f64) -> i64 {
+        ((self.saved as f64 - self.follow_bytes as f64) / bpt).round() as i64
+    }
+
+    fn follow_ups_per_shaped(&self) -> f64 {
+        if self.shaped_n == 0 {
+            0.0
+        } else {
+            self.follow_n as f64 / self.shaped_n as f64
+        }
+    }
+
+    /// MET-015: the family pays for itself and costs at most one extra call per shaped result.
+    fn ok(&self, bpt: f64) -> bool {
+        self.net_tokens(bpt) > 0 && self.follow_ups_per_shaped() <= 1.0
+    }
 }
 
 /// `aaes disable` / `aaes enable`: global kill switch (all hooks pass output through unchanged).

@@ -23,7 +23,7 @@ The report contains aggregate numbers and command-family names only, never trans
 cargo build --release            # binary: target/release/aaes(.exe)
 aaes init                        # adds hooks to ~/.claude/settings.json (backup kept);
                                  # Windows: HTTP hooks to a resident `aaes serve`, started by SessionStart
-aaes report                      # tokens saved, pass-through, rebound (local, content-free)
+aaes report                      # tokens saved, pass-through, follow-ups, MET-015 per family (local, content-free)
 aaes logs [--errors] [--tail N]  # diagnostic log: decisions + timings, auth/parse errors, schema drift
 aaes disable | aaes enable       # kill switch
 aaes uninstall                   # removes only AAES hooks and stops the server

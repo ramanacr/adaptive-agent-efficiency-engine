@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v0.4
+# Benchmark and Evaluation Protocol — AAES v0.5
 
 ## 0. Change log
 | Version | Date | Change |
@@ -7,6 +7,7 @@
 | 0.2 | 2026-11-03 | Applied design review (`05_DESIGN_REVIEW.md`). Added Phase 0 observational study from existing transcripts (R2), prompt-only arm A′ (R10), fix-commit-replay task corpus and sample-size table with a 3–5 pp noninferiority margin, fixture fidelity as the primary gate (R9), re-run/occupancy/compaction/footer metrics (R5, R8, R4), Windows/PowerShell and long-running strata (R13), compaction and same-user tests (R6, R3). |
 | 0.3 | 2026-11-03 | Phase 0 gate fixed at **≥20% cost-weighted** and implemented as `aaes mine`. Results reported in both billing views (ADR-019). Benchmark corpus split into **public** (OSS repos, reproducible) and **private** (team repos, local only) per ADR-020. Added initial-context overhead metric. |
 | 0.4 | 2026-11-03 | M1 evaluation focuses on read and search shaping: new stratum 13 (read-then-edit on large files), rebound and Edit-failure metrics and gates. Phase 0 result: GO (calibrated); calibration validated against `count_tokens` (`tools/calibration-check`): within ~5%. |
+| 0.5 | 2026-11-04 | Read-rebound gate adds ≤ 1 follow-up call per shaped result (MET-015). Early local dogfooding suggests agents fetch most of smaller shaped files anyway, so the read threshold is being evaluated at a higher value (details in the private findings). |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -88,7 +89,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 **Re-run-instead-of-retrieve rate** = re-executions of a command with a valid handle / compacted results delivered.
 **Context occupancy** = Σ (tool-result tokens × turns retained). **Compactions per task.**
 **Footer overhead** = footer tokens / delivered tokens; **pass-through rate** = results under the size threshold / all results.
-**Read rebound** (MET-015) = tokens of follow-up ranged reads, `aaes show` and "ask twice" full reads after a shaped read of the same file in the same context. **Net shaped saving** = raw − delivered − rebound.
+**Read rebound** (MET-015) = tokens of follow-up ranged reads, `aaes show` and "ask twice" full reads after a shaped read of the same file in the same context. **Net shaped saving** = raw − delivered − rebound. **Follow-ups per shaped result** = follow-up calls ÷ shaped results; a follow-up to an outlined section is expected, so this guards the extra-call cost rather than counting failures.
 **Edit failure rate** (MET-016) = failed Edit/MultiEdit calls / all Edit/MultiEdit calls.
 
 ## Initial decision gates (proposed thresholds, not observed)
@@ -100,7 +101,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Outcome (secondary) | Task success noninferior to baseline with pre-registered **3–5 pp** margin, paired, adequately powered | Otherwise hold/inconclusive |
 | Economics | Positive net cost reduction on representative workload, not just cherry-picked compressible outputs; reported vs **A′** as well as A | Do not claim cost win otherwise |
 | Re-run | Re-run-instead-of-retrieve rate does not erase measured savings (net tokens incl. re-runs > 0) | Loosen compression for offending families |
-| Read rebound | Net shaped saving > 0 per shaped family (Read, shell file reads, search) | Raise threshold or disable shaping for that family |
+| Read rebound | Net shaped saving > 0 **and ≤ 1 follow-up call per shaped result**, per shaped family (Read, shell file reads, search); `aaes report` shows both | Raise threshold or disable shaping for that family |
 | Edit fidelity | Edit failure rate with shaping not significantly higher than without (paired) | Block read shaping release |
 | Performance | p95 additional pass-through overhead ≤20 ms **including cold start** on reference desktop (Windows + Linux); full-run latency measured | Optimize or document exception |
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
