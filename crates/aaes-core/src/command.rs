@@ -133,6 +133,13 @@ const KNOWN: &[&str] = &[
     "get-process",
     "write-output",
     "write-host",
+    "cd",
+    "pushd",
+    "popd",
+    "set-location",
+    "sl",
+    "push-location",
+    "pop-location",
 ];
 
 /// Normalised command used for re-run detection: trimmed, whitespace collapsed.
@@ -400,6 +407,11 @@ mod tests {
         assert_eq!(super::shape("grep -rn -C 3 foo ."), "grep -rn -C");
         assert!(super::shape("mytool --x secret").starts_with("other:"));
         assert!(!super::shape("mytool --x secret").contains("secret"));
+        assert_eq!(
+            super::shape("Set-Location C:\\private\\repo"),
+            "set-location"
+        );
+        assert_eq!(super::shape("cd /home/me/repo"), "cd");
     }
 
     fn f(c: &str) -> String {

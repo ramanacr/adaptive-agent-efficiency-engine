@@ -53,7 +53,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 
 **Status (increment 1, 2026-11-04):**
 - ✅ `aaes init` / `uninstall` (settings backup, marker-based removal, idempotent)
-- ✅ `aaes serve` (HTTP, token, keep-alive, health/shutdown, retention sweep), auto-started by the `SessionStart` hook
+- ✅ `aaes serve` (HTTP, token, keep-alive, health/shutdown, retention sweep), auto-started by the `SessionStart` hook (hook input read with a 2 s bound, so a caller that leaves stdin open cannot hang session start)
 - ✅ Read shaping: head + complete outline with ranges; ranged pass-through; ask-twice per context; sub-agent contexts; compaction/clear/resume reset. Shell `cat`/`type`/`Get-Content` too.
 - ✅ Search shaping (Grep tool, grep/rg/git grep/Select-String): grouped, relative paths, exact totals, capped lines kept behind a handle; `aaes show`
 - ✅ Event log + `aaes report` (saved, pass-through, rebound); kill switch (`aaes disable`, `AAES_RAW=1`)

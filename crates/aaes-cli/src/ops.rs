@@ -10,15 +10,44 @@ use aaes_runtime::{Runtime, hook, log, paths, server, store};
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
-/// Hook input from stdin. Returns `Null` when stdin is an interactive terminal (run by hand), so
-/// `aaes serve --ensure` never waits for input.
+/// Longest wait for hook input. Claude Code writes the event and closes stdin at once; a caller
+/// that leaves the pipe open (a tool shell, a script) must not hang the hook or the session start.
+const STDIN_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Hook input from stdin. Returns `Null` when stdin is an interactive terminal (run by hand) or
+/// stays open past [`STDIN_TIMEOUT`], so `aaes serve --ensure` never waits for input.
 fn read_stdin_json() -> Value {
     use std::io::IsTerminal;
     if std::io::stdin().is_terminal() {
         return Value::Null;
     }
-    let mut buf = String::new();
-    let _ = std::io::stdin().read_to_string(&mut buf);
+    read_json_from(std::io::stdin(), STDIN_TIMEOUT)
+}
+
+/// Reads all of `src` on a helper thread and parses it as JSON. On timeout the thread stays
+/// blocked in `read`; the process exits soon after, which ends it.
+fn read_json_from<R: Read + Send + 'static>(mut src: R, timeout: Duration) -> Value {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = src.read_to_string(&mut buf);
+        let _ = tx.send(buf);
+    });
+    let buf = match rx.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(_) => {
+            log::warn(
+                "cli",
+                "hook stdin not closed in time; input ignored",
+                json!({ "timeout_ms": timeout.as_millis() as u64 }),
+            );
+            return Value::Null;
+        }
+    };
+    parse_hook_json(&buf)
+}
+
+fn parse_hook_json(buf: &str) -> Value {
     let buf = buf.trim_start_matches('\u{feff}'); // PowerShell pipes a UTF-8 BOM
     if buf.trim().is_empty() {
         return Value::Null;
@@ -443,4 +472,39 @@ pub fn logs_cmd(tail: usize, errors: bool, all_files: bool, raw: bool) -> Result
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reader that never reaches EOF, like a pipe its writer keeps open.
+    struct OpenPipe;
+    impl Read for OpenPipe {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            std::thread::sleep(Duration::from_secs(3600));
+            Ok(0)
+        }
+    }
+
+    #[test]
+    fn open_stdin_times_out_as_null() {
+        let t0 = Instant::now();
+        let v = read_json_from(OpenPipe, Duration::from_millis(100));
+        assert!(v.is_null());
+        assert!(t0.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn closed_stdin_is_parsed() {
+        let src = std::io::Cursor::new("\u{feff}{\"hook_event_name\":\"SessionStart\"}");
+        let v = read_json_from(src, Duration::from_secs(2));
+        assert_eq!(v["hook_event_name"], "SessionStart");
+    }
+
+    #[test]
+    fn empty_or_invalid_stdin_is_null() {
+        assert!(parse_hook_json("  \n").is_null());
+        assert!(parse_hook_json("not json").is_null());
+    }
 }
