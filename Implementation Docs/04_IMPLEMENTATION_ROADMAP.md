@@ -57,6 +57,8 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - ✅ Read shaping: head + complete outline with ranges; ranged pass-through; ask-twice per context; sub-agent contexts; compaction/clear/resume reset. Shell `cat`/`type`/`Get-Content` too.
 - ✅ Search shaping (Grep tool, grep/rg/git grep/Select-String): grouped, relative paths, exact totals, capped lines kept behind a handle; `aaes show`
 - ✅ Event log + `aaes report` (saved, pass-through, rebound); kill switch (`aaes disable`, `AAES_RAW=1`)
+- ✅ Diagnostic log + `aaes logs` (decisions with timings, auth/parse failures, schema-drift warnings, caught panics fail open); once-per-session notice via `SessionStart.additionalContext` (FUN-016)
+- ▶ Dogfood trial on the maintainer's machine started 2026-11-04 (RTK and jCodeMunch temporarily disabled for an isolated measurement; CodeGraph and tokensave kept)
 - ✅ Contract test with Claude Code 2.1.233: 5 scenarios pass. +27 ms p50 per hooked call; ≈ 70% saving on a 13k-token read; rebound 96 bytes on read-then-edit.
 - ☐ SEC-012 encryption at rest · SEC-013 redaction (stored search outputs are plaintext in the user-private data folder until then)
 - ☐ MET-016 Edit-failure events (`PostToolUseFailure`) · scripted, version-pinned contract test · release pipeline (FUN-023)

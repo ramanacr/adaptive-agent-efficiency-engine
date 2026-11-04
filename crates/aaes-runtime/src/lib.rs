@@ -12,6 +12,7 @@
 pub mod config;
 pub mod events;
 pub mod hook;
+pub mod log;
 pub mod paths;
 pub mod server;
 pub mod state;
@@ -33,6 +34,11 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(home: PathBuf) -> Self {
         let cfg = Config::load(&home);
+        let level = std::env::var("AAES_LOG")
+            .ok()
+            .and_then(|v| log::Level::parse(&v))
+            .unwrap_or(cfg.log_level);
+        log::init(&home, level);
         Self {
             home,
             cfg,

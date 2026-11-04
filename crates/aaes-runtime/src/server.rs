@@ -16,7 +16,9 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::{Runtime, hook, paths, store};
+use std::time::Instant;
+
+use crate::{Runtime, hook, log, paths, store};
 
 const MAX_BODY: usize = 64 * 1024 * 1024;
 
@@ -104,6 +106,7 @@ fn handle_conn(stream: TcpStream, rt: &Runtime, token: &str) {
     let mut r = BufReader::new(stream);
     let expected = format!("Bearer {token}");
     while let Some(req) = read_request(&mut r) {
+        let t0 = Instant::now();
         let authed = req.auth.as_deref() == Some(expected.as_str());
         let (status, body, stop) = match (req.method.as_str(), req.path.as_str()) {
             ("GET", "/aaes/v1/health") => (
@@ -112,15 +115,45 @@ fn handle_conn(stream: TcpStream, rt: &Runtime, token: &str) {
                 false,
             ),
             ("POST", "/aaes/v1/hook") if authed => {
-                let input: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-                ("200 OK", hook::handle(rt, &input).to_string(), false)
+                let input: Value = match serde_json::from_slice(&req.body) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::warn(
+                            "server",
+                            "hook body is not valid JSON; passed through",
+                            json!({ "bytes": req.body.len(), "err": e.to_string() }),
+                        );
+                        Value::Null
+                    }
+                };
+                ("200 OK", hook::handle_safe(rt, &input).to_string(), false)
             }
             ("POST", "/aaes/v1/shutdown") if authed => ("200 OK", "{}".to_owned(), true),
-            ("POST", _) => ("401 Unauthorized", "{}".to_owned(), false),
+            ("POST", path) => {
+                log::warn(
+                    "server",
+                    "unauthorized request (missing/wrong token; check AAES_HOOK_TOKEN in Claude Code settings env)",
+                    json!({ "path": path, "has_auth_header": req.auth.is_some() }),
+                );
+                ("401 Unauthorized", "{}".to_owned(), false)
+            }
             _ => ("404 Not Found", "{}".to_owned(), false),
         };
         let sent = respond(&mut w, status, &body, req.close || stop).is_ok();
+        log::debug(
+            "server",
+            "request",
+            json!({ "method": req.method, "path": req.path, "status": &status[..3], "bytes_in": req.body.len(), "bytes_out": body.len(), "dur_us": t0.elapsed().as_micros() as u64, "sent": sent }),
+        );
+        if !sent {
+            log::warn(
+                "server",
+                "failed to send response (client closed early?)",
+                json!({ "path": req.path }),
+            );
+        }
         if stop {
+            log::info("server", "shutdown requested; exiting", json!({}));
             std::process::exit(0);
         }
         if !sent || req.close {
@@ -131,14 +164,45 @@ fn handle_conn(stream: TcpStream, rt: &Runtime, token: &str) {
 
 /// Run the server until shut down. Fails if the port is taken (e.g. already running).
 pub fn serve(rt: Arc<Runtime>, port: u16) -> std::io::Result<()> {
-    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port)))?;
+    let listener = match TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))) {
+        Ok(l) => l,
+        Err(e) => {
+            log::error(
+                "server",
+                "bind failed",
+                json!({ "port": port, "err": e.to_string() }),
+            );
+            return Err(e);
+        }
+    };
     let token = Arc::new(token(&rt.home)?);
+    let pruned = log::prune(&rt.home);
+    log::info(
+        "server",
+        "started",
+        json!({
+            "port": port,
+            "version": env!("CARGO_PKG_VERSION"),
+            "retention_hours": rt.cfg.retention_hours,
+            "bytes_per_token": rt.cfg.shape.bytes_per_token,
+            "read_threshold_tokens": rt.cfg.shape.read_threshold_tokens,
+            "search_threshold_tokens": rt.cfg.shape.search_threshold_tokens,
+            "logs_pruned": pruned,
+        }),
+    );
     let retention = Duration::from_secs(rt.cfg.retention_hours * 3600);
     {
         let home = rt.home.clone();
         std::thread::spawn(move || {
             loop {
-                store::sweep(&home, retention);
+                let n = store::sweep(&home, retention);
+                if n > 0 {
+                    log::info(
+                        "store",
+                        "retention sweep removed expired sessions",
+                        json!({ "sessions": n }),
+                    );
+                }
                 std::thread::sleep(Duration::from_secs(3600));
             }
         });

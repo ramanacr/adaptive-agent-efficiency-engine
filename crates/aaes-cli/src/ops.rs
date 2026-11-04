@@ -6,21 +6,41 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use aaes_runtime::{Runtime, hook, paths, server, store};
+use aaes_runtime::{Runtime, hook, log, paths, server, store};
 use anyhow::{Result, bail};
-use serde_json::Value;
+use serde_json::{Value, json};
 
+/// Hook input from stdin. Returns `Null` when stdin is an interactive terminal (run by hand), so
+/// `aaes serve --ensure` never waits for input.
 fn read_stdin_json() -> Value {
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        return Value::Null;
+    }
     let mut buf = String::new();
     let _ = std::io::stdin().read_to_string(&mut buf);
-    serde_json::from_str(&buf).unwrap_or(Value::Null)
+    let buf = buf.trim_start_matches('\u{feff}'); // PowerShell pipes a UTF-8 BOM
+    if buf.trim().is_empty() {
+        return Value::Null;
+    }
+    match serde_json::from_str(buf) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn(
+                "cli",
+                "hook stdin is not valid JSON; ignored",
+                json!({ "bytes": buf.len(), "err": e.to_string() }),
+            );
+            Value::Null
+        }
+    }
 }
 
 /// Command-mode hook: event JSON on stdin, response JSON on stdout. Never fails the tool call.
 pub fn hook_cmd() -> Result<()> {
     let rt = Runtime::from_env();
     let input = read_stdin_json();
-    let out = hook::handle(&rt, &input);
+    let out = hook::handle_safe(&rt, &input);
     if out.as_object().is_some_and(|o| !o.is_empty()) {
         print!("{out}");
     }
@@ -101,17 +121,52 @@ pub fn serve_cmd(port: Option<u16>, ensure: bool, stop: bool) -> Result<()> {
         // Called as a SessionStart hook: apply the event, make sure the server runs, print nothing.
         let input = read_stdin_json();
         if !input.is_null() {
-            let _ = hook::handle(&rt, &input);
-        }
-        let _ = server::token(&rt.home);
-        if !server::healthy(port, Duration::from_millis(300)) {
-            let _ = spawn_detached(port);
-            let t0 = Instant::now();
-            while t0.elapsed() < Duration::from_millis(2000)
-                && !server::healthy(port, Duration::from_millis(200))
-            {
-                std::thread::sleep(Duration::from_millis(50));
+            let out = hook::handle_safe(&rt, &input);
+            if out.as_object().is_some_and(|o| !o.is_empty()) {
+                print!("{out}");
             }
+        }
+        if let Err(e) = server::token(&rt.home) {
+            log::error(
+                "ensure",
+                "cannot create hook token",
+                json!({ "err": e.to_string() }),
+            );
+        }
+        if server::healthy(port, Duration::from_millis(300)) {
+            log::debug("ensure", "server already running", json!({ "port": port }));
+            return Ok(());
+        }
+        let t0 = Instant::now();
+        if let Err(e) = spawn_detached(port) {
+            log::error(
+                "ensure",
+                "failed to start server; hooks will pass output through",
+                json!({ "port": port, "err": e.to_string() }),
+            );
+            return Ok(());
+        }
+        let mut up = false;
+        while t0.elapsed() < Duration::from_millis(2000) {
+            if server::healthy(port, Duration::from_millis(200)) {
+                up = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let ms = t0.elapsed().as_millis() as u64;
+        if up {
+            log::info(
+                "ensure",
+                "server started",
+                json!({ "port": port, "startup_ms": ms }),
+            );
+        } else {
+            log::warn(
+                "ensure",
+                "server not healthy within 2 s (still starting, or failed: see server log)",
+                json!({ "port": port, "waited_ms": ms }),
+            );
         }
         return Ok(());
     }
@@ -257,6 +312,59 @@ pub fn set_enabled(enabled: bool) -> Result<()> {
         paths::create_private_dir(&rt.home)?;
         std::fs::write(&flag, "")?;
         eprintln!("aaes: disabled (tool output passes through unchanged)");
+    }
+    Ok(())
+}
+
+/// `aaes logs`: show the diagnostic log (newest file), optionally only warnings/errors.
+pub fn logs_cmd(tail: usize, errors: bool, all_files: bool, raw: bool) -> Result<()> {
+    let rt = Runtime::from_env();
+    let files = log::files(&rt.home);
+    if files.is_empty() {
+        eprintln!("aaes: no logs yet in {}", rt.home.join("logs").display());
+        return Ok(());
+    }
+    let chosen: Vec<_> = if all_files {
+        files
+    } else {
+        files.into_iter().rev().take(1).collect()
+    };
+    let mut lines: Vec<String> = Vec::new();
+    for f in chosen.iter().rev().rev() {
+        if let Ok(t) = std::fs::read_to_string(f) {
+            lines.extend(t.lines().map(str::to_owned));
+        }
+    }
+    if errors {
+        lines.retain(|l| l.contains("\"lvl\":\"error\"") || l.contains("\"lvl\":\"warn\""));
+    }
+    let skip = lines.len().saturating_sub(tail);
+    for l in &lines[skip..] {
+        if raw {
+            println!("{l}");
+            continue;
+        }
+        let Ok(Value::Object(mut m)) = serde_json::from_str::<Value>(l) else {
+            println!("{l}");
+            continue;
+        };
+        let take = |m: &mut serde_json::Map<String, Value>, k: &str| {
+            m.remove(k)
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default()
+        };
+        let (ts, lvl, comp, msg) = (
+            take(&mut m, "ts"),
+            take(&mut m, "lvl"),
+            take(&mut m, "comp"),
+            take(&mut m, "msg"),
+        );
+        m.remove("pid");
+        println!(
+            "{ts} {:<5} {comp}: {msg} {}",
+            lvl.to_uppercase(),
+            Value::Object(m)
+        );
     }
     Ok(())
 }

@@ -84,6 +84,21 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Show the diagnostic log (AAES_HOME/logs).
+    Logs {
+        /// Number of most recent lines.
+        #[arg(long, default_value_t = 50)]
+        tail: usize,
+        /// Only warnings and errors.
+        #[arg(long)]
+        errors: bool,
+        /// Read all log files, not just the newest.
+        #[arg(long)]
+        all: bool,
+        /// Print raw JSON lines.
+        #[arg(long)]
+        raw: bool,
+    },
     /// Turn shaping off (kill switch).
     Disable,
     /// Turn shaping back on.
@@ -112,6 +127,12 @@ fn main() -> Result<()> {
             tail,
         } => ops::show_cmd(&handle, lines.as_deref(), grep.as_deref(), head, tail),
         Cmd::Report { json } => ops::report_cmd(json),
+        Cmd::Logs {
+            tail,
+            errors,
+            all,
+            raw,
+        } => ops::logs_cmd(tail, errors, all, raw),
         Cmd::Disable => ops::set_enabled(false),
         Cmd::Enable => ops::set_enabled(true),
     }
@@ -140,6 +161,11 @@ fn init(
         return Ok(());
     }
     let backup = install::write_settings(&path, &s)?;
+    aaes_runtime::log::info(
+        "init",
+        "hooks installed",
+        serde_json::json!({ "mode": if mode == install::Mode::Http { "http" } else { "command" }, "port": port, "backup": backup.is_some() }),
+    );
     eprintln!(
         "aaes: hooks installed in {} ({} mode)",
         path.display(),
@@ -171,6 +197,11 @@ fn uninstall(settings: Option<PathBuf>) -> Result<()> {
     let removed = install::strip_ours(&mut s);
     if removed > 0 {
         let backup = install::write_settings(&path, &s)?;
+        aaes_runtime::log::info(
+            "uninstall",
+            "hooks removed",
+            serde_json::json!({ "entries": removed }),
+        );
         eprintln!(
             "aaes: removed {removed} hook entries from {}",
             path.display()

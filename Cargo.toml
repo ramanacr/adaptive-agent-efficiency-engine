@@ -28,9 +28,9 @@ unsafe_code = "deny"
 all = { level = "warn", priority = -1 }
 
 # Hot-path binaries are started once per agent tool call: optimise for size and start-up.
+# panic = "unwind" (default) so a bug in a handler is caught, logged and fails open (hook::handle_safe).
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
 strip = true

@@ -37,6 +37,8 @@ pub struct Event<'a> {
     pub key_hash: Option<String>,
     /// This read follows an earlier shaped read of the same file in the same context.
     pub rebound: bool,
+    /// Handler time in microseconds (excludes HTTP/process overhead).
+    pub dur_us: u64,
 }
 
 pub fn fnv_hex(s: &str) -> String {
@@ -63,6 +65,7 @@ pub fn append(session_dir: &Path, e: &Event) {
         "delivered_bytes": e.delivered_bytes,
         "key": e.key_hash,
         "rebound": e.rebound,
+        "dur_us": e.dur_us,
     });
     if paths::create_private_dir(session_dir).is_err() {
         return;

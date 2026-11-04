@@ -11,6 +11,10 @@ pub struct Config {
     pub port: u16,
     /// Raw artifacts and session state are deleted this long after the session's last activity.
     pub retention_hours: u64,
+    /// Diagnostic log level (overridden by the `AAES_LOG` env var).
+    pub log_level: crate::log::Level,
+    /// Inject a short "AAES is active" notice at session start (FUN-016).
+    pub session_guidance: bool,
 }
 
 impl Default for Config {
@@ -19,6 +23,8 @@ impl Default for Config {
             shape: ShapeConfig::default(),
             port: DEFAULT_PORT,
             retention_hours: 24,
+            log_level: crate::log::Level::Info,
+            session_guidance: true,
         }
     }
 }
@@ -55,6 +61,12 @@ impl Config {
         }
         if let Some(x) = u("retention_hours") {
             c.retention_hours = x;
+        }
+        if let Some(b) = v["session_guidance"].as_bool() {
+            c.session_guidance = b;
+        }
+        if let Some(l) = v["log_level"].as_str().and_then(crate::log::Level::parse) {
+            c.log_level = l;
         }
         c
     }

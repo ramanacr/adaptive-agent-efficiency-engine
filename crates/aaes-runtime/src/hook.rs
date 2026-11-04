@@ -10,17 +10,91 @@
 //! - Grep (content mode): `content`.
 //! - Bash / PowerShell: `stdout`.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
+use std::time::Instant;
 
 use aaes_core::shape::{self, ShapeConfig};
 use serde_json::{Value, json};
 
 use crate::events::{self, Action, Event};
+use crate::log;
 use crate::state::State;
 use crate::{Runtime, paths, store};
 
+/// [`handle`], but a panic is caught, logged and turned into `{}` (fail-open) instead of killing
+/// the server thread or the hook process.
+pub fn handle_safe(rt: &Runtime, input: &Value) -> Value {
+    match catch_unwind(AssertUnwindSafe(|| handle(rt, input))) {
+        Ok(v) => v,
+        Err(e) => {
+            let msg = e
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_owned())
+                .or_else(|| e.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".into());
+            log::error(
+                "hook",
+                "panic in handler; passed output through",
+                json!({
+                    "event": input["hook_event_name"],
+                    "tool": input["tool_name"],
+                    "panic": msg,
+                }),
+            );
+            json!({})
+        }
+    }
+}
+
+/// Once-per-session notice so the agent knows how shaped output works (FUN-016). ~100 tokens.
+pub fn session_guidance() -> String {
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "aaes".into());
+    format!(
+        "[aaes] Token reducer active (aaes = \"{exe}\"). Large whole-file reads show lines 1-40 plus an outline with line ranges: use Read offset/limit for exact text, or read the same file again to get all of it. Large search results are grouped by file with exact totals; capped lines: `aaes show <handle>`. If output looks wrong: `aaes logs --errors`."
+    )
+}
+
+/// Keys of a JSON object (for schema-drift diagnostics; never values).
+fn keys(v: &Value) -> Value {
+    match v.as_object() {
+        Some(m) => json!(m.keys().collect::<Vec<_>>()),
+        None => json!(format!(
+            "<{}>",
+            match v {
+                Value::Null => "null",
+                Value::Bool(_) => "bool",
+                Value::Number(_) => "number",
+                Value::String(_) => "string",
+                Value::Array(_) => "array",
+                Value::Object(_) => "object",
+            }
+        )),
+    }
+}
+
+fn shape_warning(tool: &str, input: &Value) {
+    log::warn(
+        "hook",
+        "unexpected tool payload shape; passed through (Claude Code schema change?)",
+        json!({
+            "tool": tool,
+            "tool_input_keys": keys(&input["tool_input"]),
+            "tool_response_keys": keys(&input["tool_response"]),
+            "file_keys": keys(&input["tool_response"]["file"]),
+        }),
+    );
+}
+
 pub fn handle(rt: &Runtime, input: &Value) -> Value {
     if rt.disabled() {
+        log::debug(
+            "hook",
+            "disabled; pass-through",
+            json!({ "event": input["hook_event_name"] }),
+        );
         return json!({});
     }
     let session = input["session_id"].as_str().unwrap_or("unknown");
@@ -32,20 +106,41 @@ pub fn handle(rt: &Runtime, input: &Value) -> Value {
 
     match input["hook_event_name"].as_str().unwrap_or_default() {
         "SessionStart" => {
-            if matches!(
-                input["source"].as_str(),
-                Some("compact" | "clear" | "resume")
-            ) {
+            let source = input["source"].as_str().unwrap_or("?");
+            let resets = matches!(source, "compact" | "clear" | "resume");
+            if resets {
                 reset(rt, &dir, &ctx);
             }
-            json!({})
+            log::info(
+                "hook",
+                "session start",
+                json!({ "session": log::short_hash(session), "source": source, "reset": resets, "guidance": rt.cfg.session_guidance }),
+            );
+            if rt.cfg.session_guidance {
+                json!({
+                    "hookSpecificOutput": {
+                        "hookEventName": "SessionStart",
+                        "additionalContext": session_guidance(),
+                    }
+                })
+            } else {
+                json!({})
+            }
         }
         "PreCompact" | "PostCompact" => {
             reset(rt, &dir, &ctx);
+            log::info(
+                "hook",
+                "context reset",
+                json!({ "session": log::short_hash(session), "ctx": ctx, "event": input["hook_event_name"] }),
+            );
             json!({})
         }
         "PostToolUse" => post_tool_use(rt, input, session, &ctx, &dir),
-        _ => json!({}),
+        other => {
+            log::debug("hook", "ignored event", json!({ "event": other }));
+            json!({})
+        }
     }
 }
 
@@ -53,7 +148,13 @@ fn reset(rt: &Runtime, dir: &Path, ctx: &str) {
     let _g = rt.lock.lock().unwrap_or_else(|e| e.into_inner());
     let mut st = State::load(dir);
     st.reset(ctx);
-    let _ = st.save(dir);
+    if let Err(e) = st.save(dir) {
+        log::error(
+            "state",
+            "saving session state failed",
+            json!({ "err": e.to_string() }),
+        );
+    }
 }
 
 fn replace(new_response: Value, extra_context: Option<String>) -> Value {
@@ -102,6 +203,8 @@ struct Ctx<'a> {
     dir: &'a Path,
     ctx: &'a str,
     tool: &'a str,
+    session: &'a str,
+    t0: Instant,
 }
 
 impl Ctx<'_> {
@@ -116,6 +219,7 @@ impl Ctx<'_> {
         key: Option<&str>,
         rebound: bool,
     ) {
+        let dur_us = self.t0.elapsed().as_micros() as u64;
         events::append(
             self.dir,
             &Event {
@@ -128,7 +232,24 @@ impl Ctx<'_> {
                 delivered_bytes: delivered,
                 key_hash: key.map(events::fnv_hex),
                 rebound,
+                dur_us,
             },
+        );
+        log::info(
+            "hook",
+            "decision",
+            json!({
+                "session": log::short_hash(self.session),
+                "ctx": if self.ctx == "main" { "main" } else { "subagent" },
+                "tool": self.tool,
+                "kind": kind,
+                "action": action.as_str(),
+                "reason": reason,
+                "raw_bytes": raw,
+                "delivered_bytes": delivered,
+                "rebound": rebound,
+                "dur_us": dur_us,
+            }),
         );
     }
 
@@ -137,7 +258,13 @@ impl Ctx<'_> {
         let _g = self.rt.lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut st = State::load(self.dir);
         let n = st.bump_read(self.ctx, key);
-        let _ = st.save(self.dir);
+        if let Err(e) = st.save(self.dir) {
+            log::error(
+                "state",
+                "saving session state failed",
+                json!({ "err": e.to_string() }),
+            );
+        }
         n
     }
 
@@ -153,19 +280,32 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
     let resp = &input["tool_response"];
     let cwd = input["cwd"].as_str();
     let cfg: &ShapeConfig = &rt.cfg.shape;
-    let c = Ctx { rt, dir, ctx, tool };
+    let c = Ctx {
+        rt,
+        dir,
+        ctx,
+        tool,
+        session,
+        t0: Instant::now(),
+    };
 
     match tool {
         "Read" => {
+            if resp["type"].as_str().is_some_and(|t| t != "text") {
+                log::debug(
+                    "hook",
+                    "non-text read; pass-through",
+                    json!({ "type": resp["type"] }),
+                );
+                return json!({});
+            }
             let (Some(path), Some(content)) =
                 (ti["file_path"].as_str(), resp["file"]["content"].as_str())
             else {
+                shape_warning(tool, input);
                 return json!({});
             };
             let key = read_key(path, cwd);
-            if resp["type"].as_str() != Some("text") {
-                return json!({});
-            }
             if !ti["offset"].is_null() || !ti["limit"].is_null() {
                 let rebound = c.was_read(&key);
                 c.log(
@@ -223,12 +363,18 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
             replace(new, Some(context))
         }
         "Grep" => {
-            let Some(content) = resp["content"].as_str() else {
-                return json!({});
-            };
             if resp["mode"].as_str() != Some("content") {
+                log::debug(
+                    "hook",
+                    "grep not in content mode; pass-through",
+                    json!({ "mode": resp["mode"] }),
+                );
                 return json!({});
             }
+            let Some(content) = resp["content"].as_str() else {
+                shape_warning(tool, input);
+                return json!({});
+            };
             search(&c, session, content, cwd, cfg, |text| {
                 let mut new = resp.clone();
                 new["numLines"] = json!(text.lines().count());
@@ -239,6 +385,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
         "Bash" | "PowerShell" => {
             let (Some(cmd), Some(stdout)) = (ti["command"].as_str(), resp["stdout"].as_str())
             else {
+                shape_warning(tool, input);
                 return json!({});
             };
             if resp["interrupted"].as_bool() == Some(true)
@@ -321,7 +468,17 @@ fn search(
         );
         return json!({});
     };
-    if s.omitted_lines > 0 && store::save(&c.rt.home, session, &handle, raw).is_err() {
+    let saved = if s.omitted_lines > 0 {
+        store::save(&c.rt.home, session, &handle, raw)
+    } else {
+        Ok(())
+    };
+    if let Err(e) = saved {
+        log::error(
+            "store",
+            "saving raw search output failed; passed through",
+            json!({ "err": e.to_string() }),
+        );
         // Can't keep the omitted lines retrievable: don't drop them.
         c.log(
             "search",
@@ -531,6 +688,24 @@ mod tests {
         let mut ev2 = ev.clone();
         ev2["session_id"] = json!("s5");
         assert_eq!(handle(&rt, &ev2), json!({}));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn session_start_injects_guidance_unless_disabled() {
+        let (rt, home) = rt();
+        let ev =
+            json!({"hook_event_name": "SessionStart", "session_id": "g1", "source": "startup"});
+        let out = handle(&rt, &ev);
+        let ctx = out["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap();
+        assert!(ctx.starts_with("[aaes] Token reducer active"));
+        assert!(ctx.len() < 800, "short notice");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("config.json"), r#"{"session_guidance": false}"#).unwrap();
+        let rt2 = Runtime::new(home.clone());
+        assert_eq!(handle(&rt2, &ev), json!({}));
         let _ = std::fs::remove_dir_all(&home);
     }
 

@@ -24,9 +24,13 @@ cargo build --release            # binary: target/release/aaes(.exe)
 aaes init                        # adds hooks to ~/.claude/settings.json (backup kept);
                                  # Windows: HTTP hooks to a resident `aaes serve`, started by SessionStart
 aaes report                      # tokens saved, pass-through, rebound (local, content-free)
+aaes logs [--errors] [--tail N]  # diagnostic log: decisions + timings, auth/parse errors, schema drift
 aaes disable | aaes enable       # kill switch
 aaes uninstall                   # removes only AAES hooks and stops the server
 ```
+Optional `config.json` in the data folder (`%LOCALAPPDATA%\aaes`, `~/.local/state/aaes`, or `$AAES_HOME`):
+`{"log_level": "debug", "session_guidance": true, "read_threshold_tokens": 2000, "search_max_lines_per_file": 20, "retention_hours": 24}`.
+Each session starts with a short notice (~150 tokens) telling the agent how shaped output works; set `session_guidance` to `false` to turn it off.
 What changes for the agent:
 - **Large whole-file reads** (Read tool, `cat`, `Get-Content`) return the first 40 lines verbatim plus a structural outline with exact line ranges. Ranged reads pass through, and reading the same file again returns it in full.
 - **Large search results** (Grep tool, `grep`/`rg`/`git grep`/`Select-String`) are grouped by file with exact totals; capped lines stay retrievable with `aaes show <handle>`.
