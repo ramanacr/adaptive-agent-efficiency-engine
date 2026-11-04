@@ -53,6 +53,9 @@ impl Config {
         if let Some(x) = u("search_threshold_tokens") {
             c.shape.search_threshold_tokens = x as usize;
         }
+        if let Some(x) = f("search_min_parsed").filter(|x| (0.5..=1.0).contains(x)) {
+            c.shape.search_min_parsed = x;
+        }
         if let Some(x) = u("search_max_lines_per_file") {
             c.shape.search_max_lines_per_file = (x as usize).max(1);
         }

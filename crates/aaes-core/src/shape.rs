@@ -21,6 +21,10 @@ pub struct ShapeConfig {
     pub search_max_lines_per_file: usize,
     /// Without capping, shape only if it saves at least this fraction.
     pub search_min_saving: f64,
+    /// Shape a search output only if at least this fraction of its lines parse as `path:…`
+    /// (chained commands often mix in single-file `grep -n` lines or notices; those are kept
+    /// verbatim, in order, after the grouped part).
+    pub search_min_parsed: f64,
 }
 
 impl Default for ShapeConfig {
@@ -35,6 +39,7 @@ impl Default for ShapeConfig {
             search_threshold_tokens: 1_500,
             search_max_lines_per_file: 20,
             search_min_saving: 0.15,
+            search_min_parsed: 0.7,
         }
     }
 }
@@ -166,7 +171,7 @@ pub struct SearchShape {
 pub enum SearchSkip {
     /// Below `search_threshold_tokens`.
     Small,
-    /// Fewer than 90% of the lines look like `path:…` grep output.
+    /// Fewer than `search_min_parsed` of the lines look like `path:…` grep output.
     Unparsed {
         lines: usize,
         parsed: usize,
@@ -293,7 +298,7 @@ pub fn shape_search(
         .collect();
     let parsed: Vec<Option<Parsed>> = lines.iter().map(|l| parse_line(l)).collect();
     let ok = parsed.iter().filter(|p| p.is_some()).count();
-    if lines.is_empty() || ok * 10 < lines.len() * 9 {
+    if lines.is_empty() || (ok as f64) < lines.len() as f64 * cfg.search_min_parsed {
         // not grep-shaped (e.g. single-file output without paths): record what it looked like
         let mut forms: Vec<(&'static str, usize)> = Vec::new();
         for l in lines
@@ -353,13 +358,21 @@ pub fn shape_search(
             out.push('\n');
         }
     }
-    // lines we could not parse are kept verbatim at the end
+    // lines we could not parse (e.g. from a chained single-file `grep -n`) are kept verbatim,
+    // in their original order, after the grouped part
     let unparsed: Vec<&&str> = lines
         .iter()
         .zip(&parsed)
         .filter(|(_, p)| p.is_none())
         .map(|(l, _)| l)
         .collect();
+    if !unparsed.is_empty() {
+        out.push_str(&format!(
+            "[aaes] {} other line{} (not `path:line` form), verbatim in original order:\n",
+            unparsed.len(),
+            if unparsed.len() == 1 { "" } else { "s" }
+        ));
+    }
     for l in &unparsed {
         out.push_str(l);
         out.push('\n');
@@ -591,6 +604,33 @@ mod tests {
             shape_search("a.rs:1:x\n", None, &ShapeConfig::default(), None),
             Err(SearchSkip::Small)
         ));
+    }
+
+    #[test]
+    fn mixed_chained_output_is_shaped_with_other_lines_verbatim() {
+        // `grep -rn … ; grep -n … one.cs`: 80% path-prefixed, 20% line-number-only
+        let mut text = grep_output(4, 40, "src/");
+        let extra: String = (0..40)
+            .map(|i| format!("{i}:    single file hit {i}\n"))
+            .collect();
+        text.push_str(&extra);
+        let r = shape_search(&text, None, &ShapeConfig::default(), Some("h_m")).expect("shaped");
+        let tail = r
+            .text
+            .split("verbatim in original order:\n")
+            .nth(1)
+            .expect("other block");
+        assert!(tail.starts_with("0:    single file hit 0\n1:    single file hit 1\n"));
+        assert!(r.text.contains("[aaes] 40 other lines"));
+        // below the bar: mostly unparsed
+        let mostly: String =
+            (0..300).map(|i| format!("{i}: x\n")).collect::<String>() + &grep_output(1, 50, "a/");
+        assert_eq!(
+            shape_search(&mostly, None, &ShapeConfig::default(), None)
+                .unwrap_err()
+                .reason(),
+            "unparsed"
+        );
     }
 
     #[test]
