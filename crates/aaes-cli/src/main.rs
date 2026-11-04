@@ -187,6 +187,25 @@ fn init(
         "aaes: data folder {} · undo with `aaes uninstall`",
         rt.home.display()
     );
+    if let Some(dir) = std::env::current_exe()?.parent() {
+        if !install::dir_on_path(dir, std::env::var_os("PATH").as_deref()) {
+            eprintln!(
+                "aaes: note: {} is not on PATH, so `aaes report`/`aaes logs` need the full path. Add it with:",
+                dir.display()
+            );
+            if cfg!(windows) {
+                eprintln!(
+                    "  [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';{}', 'User')",
+                    dir.display()
+                );
+            } else {
+                eprintln!(
+                    "  echo 'export PATH=\"$PATH:{}\"' >> ~/.profile",
+                    dir.display()
+                );
+            }
+        }
+    }
     Ok(())
 }
 

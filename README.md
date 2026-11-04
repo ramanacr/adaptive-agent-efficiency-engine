@@ -28,8 +28,9 @@ aaes logs [--errors] [--tail N]  # diagnostic log: decisions + timings, auth/par
 aaes disable | aaes enable       # kill switch
 aaes uninstall                   # removes only AAES hooks and stops the server
 ```
-Optional `config.json` in the data folder (`%LOCALAPPDATA%\aaes`, `~/.local/state/aaes`, or `$AAES_HOME`):
+Optional `config.json` in the data folder (`%USERPROFILE%\.aaes` on Windows, `~/.local/state/aaes` elsewhere, or `$AAES_HOME`):
 `{"log_level": "debug", "session_guidance": true, "read_threshold_tokens": 2000, "search_max_lines_per_file": 20, "retention_hours": 24}`.
+On Windows the data folder is deliberately outside `AppData`: apps installed as MSIX packages (such as the Claude desktop app) have their `AppData` writes redirected to a private copy, which would otherwise split data, logs and the hook token between a server started from the app and a CLI run from a terminal. Put `aaes` itself somewhere on your `PATH` (`aaes init` warns if it isn't).
 Each session starts with a short notice (~150 tokens) telling the agent how shaped output works; set `session_guidance` to `false` to turn it off.
 What changes for the agent:
 - **Large whole-file reads** (Read tool, `cat`, `Get-Content`) return the first 40 lines verbatim plus a structural outline with exact line ranges. Ranged reads pass through, and reading the same file again returns it in full.

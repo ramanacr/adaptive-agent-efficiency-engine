@@ -6,7 +6,7 @@
 //! - [`events`]: content-free per-session event log (MET-012/015).
 //! - [`server`]: resident HTTP hook server (ADR-021).
 //!
-//! Data lives under [`paths::aaes_home`] (`AAES_HOME`, else `%LOCALAPPDATA%\aaes` on Windows,
+//! Data lives under [`paths::aaes_home`] (`AAES_HOME`, else `%USERPROFILE%\.aaes` on Windows,
 //! `$XDG_STATE_HOME/aaes` or `~/.local/state/aaes` elsewhere).
 
 pub mod config;

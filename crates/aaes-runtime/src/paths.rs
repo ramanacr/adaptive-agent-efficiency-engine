@@ -1,11 +1,20 @@
 use std::path::{Path, PathBuf};
 
 /// AAES data folder (user-private).
+///
+/// On Windows this is `%USERPROFILE%\.aaes`, deliberately outside `AppData`: processes started by
+/// MSIX-packaged apps (e.g. the Claude desktop app and every agent/hook it spawns) have their
+/// `AppData` writes silently redirected to a per-package copy, so a server started from such a
+/// process and a CLI started from a normal terminal would otherwise see different data folders,
+/// different hook tokens, and split logs.
 pub fn aaes_home() -> PathBuf {
     if let Some(h) = std::env::var_os("AAES_HOME") {
         return PathBuf::from(h);
     }
     if cfg!(windows) {
+        if let Some(u) = std::env::var_os("USERPROFILE") {
+            return PathBuf::from(u).join(".aaes");
+        }
         if let Some(l) = std::env::var_os("LOCALAPPDATA") {
             return PathBuf::from(l).join("aaes");
         }

@@ -50,6 +50,22 @@ pub fn exe_for_command(exe: &Path) -> String {
     }
 }
 
+/// Whether `dir` is one of the entries of a `PATH`-style value (case-insensitive on Windows,
+/// ignoring trailing separators).
+pub fn dir_on_path(dir: &Path, path_var: Option<&std::ffi::OsStr>) -> bool {
+    let norm = |p: &Path| {
+        let s = p.to_string_lossy();
+        let s = s.trim_end_matches(['/', '\\']);
+        if cfg!(windows) {
+            s.to_lowercase()
+        } else {
+            s.to_owned()
+        }
+    };
+    let want = norm(dir);
+    path_var.is_some_and(|v| std::env::split_paths(v).any(|p| norm(&p) == want))
+}
+
 fn command_hook(exe: &str, args: &str, timeout: u64) -> Value {
     json!({ "type": "command", "command": format!("{exe} {args} {MARK}"), "timeout": timeout })
 }
@@ -210,6 +226,16 @@ pub fn write_settings(path: &Path, settings: &Value) -> anyhow::Result<Option<Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dir_on_path_matches_entries() {
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let v = std::ffi::OsString::from(format!("/usr/bin{sep}/opt/aaes/{sep}/x"));
+        assert!(dir_on_path(Path::new("/opt/aaes"), Some(&v)));
+        assert!(dir_on_path(Path::new("/usr/bin"), Some(&v)));
+        assert!(!dir_on_path(Path::new("/opt"), Some(&v)));
+        assert!(!dir_on_path(Path::new("/opt/aaes"), None));
+    }
 
     fn user_settings() -> Value {
         json!({
