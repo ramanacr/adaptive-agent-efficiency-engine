@@ -202,12 +202,24 @@ struct Ctx<'a> {
     rt: &'a Runtime,
     dir: &'a Path,
     ctx: &'a str,
+    agent_type: Option<&'a str>,
     tool: &'a str,
     session: &'a str,
     t0: Instant,
 }
 
+/// Lower-cased file extension (diagnostics only).
+fn ext(path: &str) -> String {
+    Path::new(path)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
 impl Ctx<'_> {
+    /// Record one decision: a content-free event (for `aaes report`) and a diagnostic log line.
+    /// `detail` holds structural facts only (sizes, line numbers, extensions, command shapes) —
+    /// never file content, paths, patterns or arguments.
     #[allow(clippy::too_many_arguments)]
     fn log(
         &self,
@@ -218,6 +230,7 @@ impl Ctx<'_> {
         delivered: usize,
         key: Option<&str>,
         rebound: bool,
+        detail: Value,
     ) {
         let dur_us = self.t0.elapsed().as_micros() as u64;
         events::append(
@@ -235,29 +248,46 @@ impl Ctx<'_> {
                 dur_us,
             },
         );
-        log::info(
-            "hook",
-            "decision",
-            json!({
-                "session": log::short_hash(self.session),
-                "ctx": if self.ctx == "main" { "main" } else { "subagent" },
-                "tool": self.tool,
-                "kind": kind,
-                "action": action.as_str(),
-                "reason": reason,
-                "raw_bytes": raw,
-                "delivered_bytes": delivered,
-                "rebound": rebound,
-                "dur_us": dur_us,
-            }),
-        );
+        let mut rec = json!({
+            "session": log::short_hash(self.session),
+            "ctx": if self.ctx == "main" { "main" } else { "subagent" },
+            "tool": self.tool,
+            "kind": kind,
+            "action": action.as_str(),
+            "reason": reason,
+            "raw_bytes": raw,
+            "delivered_bytes": delivered,
+            "rebound": rebound,
+            "dur_us": dur_us,
+        });
+        if self.ctx != "main" {
+            rec["agent"] = json!(log::short_hash(self.ctx));
+            if let Some(t) = self.agent_type {
+                rec["agent_type"] = json!(t);
+            }
+        }
+        if let Some(k) = key {
+            rec["key"] = json!(log::short_hash(k));
+        }
+        if let (Some(r), Value::Object(d)) = (rec.as_object_mut(), detail) {
+            r.extend(d);
+        }
+        log::info("hook", "decision", rec);
     }
 
     /// Ask-twice bookkeeping for a whole-file read. Returns (previous count).
     fn bump(&self, key: &str) -> u64 {
+        self.with_state(|st| st.bump_read(self.ctx, key))
+    }
+
+    fn mark_shaped(&self, key: &str, head_lines: usize, total_lines: usize) {
+        self.with_state(|st| st.mark_shaped(self.ctx, key, head_lines, total_lines));
+    }
+
+    fn with_state<T>(&self, f: impl FnOnce(&mut State) -> T) -> T {
         let _g = self.rt.lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut st = State::load(self.dir);
-        let n = st.bump_read(self.ctx, key);
+        let out = f(&mut st);
         if let Err(e) = st.save(self.dir) {
             log::error(
                 "state",
@@ -265,13 +295,31 @@ impl Ctx<'_> {
                 json!({ "err": e.to_string() }),
             );
         }
-        n
+        out
     }
 
-    fn was_read(&self, key: &str) -> bool {
+    /// `(ms since shaped, head lines shown, total lines)` if `key` was shaped in this context.
+    fn shaped_info(&self, key: &str) -> Option<(u64, usize, usize)> {
         let _g = self.rt.lock.lock().unwrap_or_else(|e| e.into_inner());
-        State::load(self.dir).was_read(self.ctx, key)
+        State::load(self.dir).shaped_info(self.ctx, key)
     }
+}
+
+/// Diagnostics for a follow-up read of a shaped file: how soon, which lines, overlap with the head.
+fn rebound_detail(info: (u64, usize, usize), start: usize, num: usize) -> Value {
+    let (since_ms, head, total) = info;
+    let end = start + num.saturating_sub(1);
+    let overlap = if num == 0 || start > head {
+        0
+    } else {
+        end.min(head) - start + 1
+    };
+    json!({
+        "since_ms": since_ms,
+        "shaped_head_lines": head,
+        "head_overlap_lines": overlap,
+        "coverage_pct": (num * 100).checked_div(total).map_or(0, |p| p.min(100)),
+    })
 }
 
 fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Path) -> Value {
@@ -284,6 +332,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
         rt,
         dir,
         ctx,
+        agent_type: input["agent_type"].as_str(),
         tool,
         session,
         t0: Instant::now(),
@@ -306,8 +355,29 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 return json!({});
             };
             let key = read_key(path, cwd);
+            let file = &resp["file"];
+            let total_lines = file["totalLines"].as_u64().map(|t| t as usize);
             if !ti["offset"].is_null() || !ti["limit"].is_null() {
-                let rebound = c.was_read(&key);
+                let start = file["startLine"].as_u64().unwrap_or(1) as usize;
+                let num = file["numLines"]
+                    .as_u64()
+                    .map_or_else(|| content.lines().count(), |n| n as usize);
+                let mut d = json!({
+                    "ext": ext(path),
+                    "offset": ti["offset"],
+                    "limit": ti["limit"],
+                    "start_line": start,
+                    "num_lines": num,
+                    "total_lines": total_lines,
+                });
+                let info = c.shaped_info(&key);
+                if let Some(i) = info {
+                    if let (Some(dm), Value::Object(m)) =
+                        (d.as_object_mut(), rebound_detail(i, start, num))
+                    {
+                        dm.extend(m);
+                    }
+                }
                 c.log(
                     "read",
                     Action::PassThrough,
@@ -315,11 +385,13 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                     content.len(),
                     content.len(),
                     Some(&key),
-                    rebound,
+                    info.is_some(),
+                    d,
                 );
                 return json!({});
             }
             if c.bump(&key) >= 1 {
+                let info = c.shaped_info(&key);
                 c.log(
                     "read",
                     Action::FullOnRepeat,
@@ -327,7 +399,8 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                     content.len(),
                     content.len(),
                     Some(&key),
-                    true,
+                    info.is_some(),
+                    json!({ "ext": ext(path), "total_lines": total_lines, "since_ms": info.map(|i| i.0) }),
                 );
                 return json!({});
             }
@@ -340,17 +413,17 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                     content.len(),
                     Some(&key),
                     false,
+                    json!({ "ext": ext(path), "total_lines": total_lines, "est_tokens": cfg.est_tokens(content.len()) }),
                 );
                 return json!({});
             };
-            let total = resp["file"]["totalLines"]
-                .as_u64()
-                .map_or(r.total_lines, |t| t as usize);
+            let total = total_lines.unwrap_or(r.total_lines);
             let shown = display_path(path, cwd);
             let context = shape::read_context(shown, &r, total);
             let mut new = resp.clone();
             new["file"]["content"] = json!(r.head);
             new["file"]["numLines"] = json!(r.head_lines);
+            c.mark_shaped(&key, r.head_lines, total);
             c.log(
                 "read",
                 Action::Shaped,
@@ -359,15 +432,37 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 r.head.len() + context.len(),
                 Some(&key),
                 false,
+                json!({
+                    "ext": ext(path),
+                    "total_lines": total,
+                    "head_lines": r.head_lines,
+                    "head_bytes": r.head.len(),
+                    "outline_items": r.outline_items,
+                    "outline_omitted": r.omitted_items,
+                    "outline_bytes": r.outline.len(),
+                    "est_tokens": r.raw_tokens,
+                }),
             );
             replace(new, Some(context))
         }
         "Grep" => {
-            if resp["mode"].as_str() != Some("content") {
-                log::debug(
-                    "hook",
-                    "grep not in content mode; pass-through",
-                    json!({ "mode": resp["mode"] }),
+            let mode = resp["mode"].as_str().unwrap_or("?");
+            if mode != "content" {
+                let size = resp["filenames"].as_array().map_or(0, |a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(|s| s.len() + 1)
+                        .sum()
+                });
+                c.log(
+                    "search",
+                    Action::PassThrough,
+                    "not_content_mode",
+                    size,
+                    size,
+                    None,
+                    false,
+                    json!({ "mode": mode, "num_files": resp["numFiles"] }),
                 );
                 return json!({});
             }
@@ -375,7 +470,11 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 shape_warning(tool, input);
                 return json!({});
             };
-            search(&c, session, content, cwd, cfg, |text| {
+            let d = json!({
+                "mode": mode,
+                "context": ti["-C"].is_number() || ti["-A"].is_number() || ti["-B"].is_number(),
+            });
+            search(&c, session, content, cwd, cfg, d, |text| {
                 let mut new = resp.clone();
                 new["numLines"] = json!(text.lines().count());
                 new["content"] = json!(text);
@@ -394,9 +493,12 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
             {
                 return json!({});
             }
+            let cmd_shape = aaes_core::command::shape(cmd);
             if let Some(target) = shape::shell_read_target(cmd) {
                 let key = read_key(&target, cwd);
+                let base = json!({ "cmd": cmd_shape, "ext": ext(&target) });
                 if c.bump(&key) >= 1 {
+                    let info = c.shaped_info(&key);
                     c.log(
                         "shell_read",
                         Action::FullOnRepeat,
@@ -404,7 +506,8 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                         stdout.len(),
                         stdout.len(),
                         Some(&key),
-                        true,
+                        info.is_some(),
+                        base,
                     );
                     return json!({});
                 }
@@ -417,10 +520,15 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                         stdout.len(),
                         Some(&key),
                         false,
+                        base,
                     );
                     return json!({});
                 };
                 let text = shape::shell_read_text(display_path(&target, cwd), &r);
+                c.mark_shaped(&key, r.head_lines, r.total_lines);
+                let mut d = base;
+                d["total_lines"] = json!(r.total_lines);
+                d["outline_items"] = json!(r.outline_items);
                 c.log(
                     "shell_read",
                     Action::Shaped,
@@ -429,44 +537,85 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                     text.len(),
                     Some(&key),
                     false,
+                    d,
                 );
                 let mut new = resp.clone();
                 new["stdout"] = json!(text);
                 return replace(new, None);
             }
             if shape::is_shell_search(cmd) {
-                return search(&c, session, stdout, cwd, cfg, |text| {
+                let d = json!({ "cmd": cmd_shape });
+                return search(&c, session, stdout, cwd, cfg, d, |text| {
                     let mut new = resp.clone();
                     new["stdout"] = json!(text);
                     new
                 });
             }
+            // Not handled: record its shape and size so the next levers can be found from data.
+            let stderr = resp["stderr"].as_str().map_or(0, str::len);
+            c.log(
+                "other",
+                Action::PassThrough,
+                "not_handled",
+                stdout.len(),
+                stdout.len(),
+                None,
+                false,
+                json!({
+                    "cmd": cmd_shape,
+                    "family": aaes_core::command::family(cmd, true),
+                    "stderr_bytes": stderr,
+                    "lines": stdout.lines().count(),
+                }),
+            );
             json!({})
         }
         _ => json!({}),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn search(
     c: &Ctx,
     session: &str,
     raw: &str,
     cwd: Option<&str>,
     cfg: &ShapeConfig,
+    mut detail: Value,
     build: impl FnOnce(&str) -> Value,
 ) -> Value {
     let handle = store::new_handle();
-    let Some(s) = shape::shape_search(raw, cwd, cfg, Some(&handle)) else {
-        c.log(
-            "search",
-            Action::PassThrough,
-            "small_or_unparsed",
-            raw.len(),
-            raw.len(),
-            None,
-            false,
-        );
-        return json!({});
+    let s = match shape::shape_search(raw, cwd, cfg, Some(&handle)) {
+        Ok(s) => s,
+        Err(skip) => {
+            detail["lines"] = json!(raw.lines().count());
+            if let shape::SearchSkip::Unparsed {
+                lines,
+                parsed,
+                forms,
+            } = &skip
+            {
+                detail["parsed_lines"] = json!(parsed);
+                detail["considered_lines"] = json!(lines);
+                detail["unparsed_forms"] = Value::Object(
+                    forms
+                        .iter()
+                        .map(|(k, n)| ((*k).to_owned(), json!(n)))
+                        .collect(),
+                );
+            }
+            c.log(
+                "search",
+                Action::PassThrough,
+                skip.reason(),
+                raw.len(),
+                raw.len(),
+                None,
+                false,
+                detail,
+            );
+            return json!({});
+        }
     };
     let saved = if s.omitted_lines > 0 {
         store::save(&c.rt.home, session, &handle, raw)
@@ -488,9 +637,13 @@ fn search(
             raw.len(),
             None,
             false,
+            detail,
         );
         return json!({});
     }
+    detail["matches"] = json!(s.matches);
+    detail["files"] = json!(s.files);
+    detail["omitted_lines"] = json!(s.omitted_lines);
     c.log(
         "search",
         Action::Shaped,
@@ -503,6 +656,7 @@ fn search(
         s.text.len(),
         None,
         false,
+        detail,
     );
     replace(build(&s.text), None)
 }
@@ -609,6 +763,64 @@ mod tests {
         assert_eq!(events.lines().count(), 5);
         assert!(events.contains("\"rebound\":true"));
         assert!(!events.contains("big.ts"), "no paths in the event log");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn rebound_counts_only_follow_ups_of_shaped_files() {
+        let (rt, home) = rt();
+        // small file read whole, then ranged: not a rebound (nothing was withheld)
+        handle(
+            &rt,
+            &read_event("s5", None, "a.ts", "const a = 1;\n", false),
+        );
+        handle(&rt, &read_event("s5", None, "a.ts", "const a = 1;\n", true));
+        let events =
+            std::fs::read_to_string(paths::session_dir(&home, "s5").join("events.jsonl")).unwrap();
+        assert!(!events.contains("\"rebound\":true"), "{events}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn rebound_detail_measures_overlap_and_coverage() {
+        // head showed lines 1-40 of 400; follow-up read lines 30-129
+        assert_eq!(
+            rebound_detail((1500, 40, 400), 30, 100),
+            json!({"since_ms": 1500, "shaped_head_lines": 40, "head_overlap_lines": 11, "coverage_pct": 25})
+        );
+        assert_eq!(
+            rebound_detail((0, 40, 400), 41, 10)["head_overlap_lines"],
+            0
+        );
+        assert_eq!(rebound_detail((0, 40, 0), 1, 10)["coverage_pct"], 0);
+    }
+
+    #[test]
+    fn unparsed_search_and_unhandled_commands_are_recorded() {
+        let (rt, home) = rt();
+        let stdout: String = (0..400)
+            .map(|i| format!("{i}:  matching line text\n"))
+            .collect();
+        let bash = |cmd: &str, out: &str| {
+            json!({
+                "hook_event_name": "PostToolUse", "session_id": "s6", "cwd": "/r",
+                "tool_name": "Bash", "tool_input": { "command": cmd },
+                "tool_response": { "stdout": out, "stderr": "", "interrupted": false, "isImage": false }
+            })
+        };
+        assert_eq!(
+            handle(&rt, &bash("grep -n foo src/one.rs", &stdout)),
+            json!({})
+        );
+        assert_eq!(
+            handle(&rt, &bash("cargo test --workspace", "ok\n")),
+            json!({})
+        );
+        let events =
+            std::fs::read_to_string(paths::session_dir(&home, "s6").join("events.jsonl")).unwrap();
+        assert!(events.contains("\"reason\":\"unparsed\""), "{events}");
+        assert!(events.contains("\"reason\":\"not_handled\""), "{events}");
+        assert!(!events.contains("foo") && !events.contains("one.rs"));
         let _ = std::fs::remove_dir_all(&home);
     }
 

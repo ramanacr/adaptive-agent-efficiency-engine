@@ -204,6 +204,48 @@ pub fn single_invocation(cmd: &str) -> Option<(String, Vec<String>)> {
     Some((program, rest.args))
 }
 
+/// Content-free shape of a command for diagnostics: per segment the program (unknown programs
+/// anonymised) and its flags with any `=value` dropped; arguments, patterns and paths are omitted.
+/// Example: `rg -n --glob=*.rs "foo" src | head -50` → `rg -n --glob | head -<n>`.
+pub fn shape(cmd: &str) -> String {
+    let mut parts = Vec::new();
+    for seg in split_segments(cmd) {
+        let Some((program, rest)) = first_program(&seg) else {
+            continue;
+        };
+        let mut s = if KNOWN.contains(&program.as_str()) {
+            program.clone()
+        } else {
+            format!("other:{:08x}", fnv1a(&program))
+        };
+        for a in rest
+            .args
+            .iter()
+            .filter(|a| a.starts_with('-') && a.len() > 1)
+        {
+            let flag = a.split('=').next().unwrap_or(a);
+            // `-50` (head/tail counts) and other numeric flags: keep the shape, not the value
+            let flag: String = if flag[1..].chars().all(|c| c.is_ascii_digit()) {
+                "-<n>".into()
+            } else {
+                flag.chars().take(24).collect()
+            };
+            s.push(' ');
+            s.push_str(&flag);
+        }
+        parts.push(s);
+    }
+    let mut out = parts.join(" | ");
+    if out.len() > 200 {
+        let cut = (0..=200)
+            .rev()
+            .find(|i| out.is_char_boundary(*i))
+            .unwrap_or(0);
+        out.truncate(cut);
+    }
+    out
+}
+
 struct Rest {
     args: Vec<String>,
     is_path: bool,
@@ -348,6 +390,17 @@ fn fnv1a(s: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::family;
+
+    #[test]
+    fn shape_keeps_programs_and_flags_only() {
+        assert_eq!(
+            super::shape("rg -n --glob=*.rs \"secret pattern\" src/x | head -50"),
+            "rg -n --glob | head -<n>"
+        );
+        assert_eq!(super::shape("grep -rn -C 3 foo ."), "grep -rn -C");
+        assert!(super::shape("mytool --x secret").starts_with("other:"));
+        assert!(!super::shape("mytool --x secret").contains("secret"));
+    }
 
     fn f(c: &str) -> String {
         family(c, false)

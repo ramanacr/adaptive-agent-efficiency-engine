@@ -161,6 +161,54 @@ pub struct SearchShape {
     pub raw_tokens: usize,
 }
 
+/// Why a search result was passed through unchanged (diagnostics only; content-free).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SearchSkip {
+    /// Below `search_threshold_tokens`.
+    Small,
+    /// Fewer than 90% of the lines look like `path:…` grep output.
+    Unparsed {
+        lines: usize,
+        parsed: usize,
+        /// Unparsed lines by [`line_form`], most common first.
+        forms: Vec<(&'static str, usize)>,
+    },
+    /// Grouping would not save at least `search_min_saving`.
+    LowSaving,
+}
+
+impl SearchSkip {
+    pub fn reason(&self) -> &'static str {
+        match self {
+            SearchSkip::Small => "small",
+            SearchSkip::Unparsed { .. } => "unparsed",
+            SearchSkip::LowSaving => "low_saving",
+        }
+    }
+}
+
+/// Coarse, content-free form of a search output line we could not parse, to see which output
+/// formats are worth supporting next.
+pub fn line_form(line: &str) -> &'static str {
+    let l = line.trim_start();
+    let digits = l.chars().take_while(char::is_ascii_digit).count();
+    if l.starts_with('{') || l.starts_with('[') {
+        "json"
+    } else if digits > 0 && matches!(l.as_bytes().get(digits), Some(b':' | b'-')) {
+        "lineno_only" // single-file `grep -n`, or the body of `rg --heading`
+    } else if digits > 0 && digits == l.len() {
+        "number"
+    } else if l.starts_with("Binary file") || l.contains("binary file matches") {
+        "binary_notice"
+    } else if plausible_path(l.trim_end()) && !l[2.min(l.len())..].contains(':') {
+        "path_only" // `grep -l`, or the file line of `rg --heading`
+    } else if l.contains(':') {
+        "colon_other"
+    } else {
+        "other"
+    }
+}
+
 struct Parsed<'a> {
     path: &'a str,
     rest: &'a str,
@@ -234,10 +282,10 @@ pub fn shape_search(
     cwd: Option<&str>,
     cfg: &ShapeConfig,
     handle: Option<&str>,
-) -> Option<SearchShape> {
+) -> Result<SearchShape, SearchSkip> {
     let raw_tokens = cfg.est_tokens(text.len());
     if raw_tokens < cfg.search_threshold_tokens {
-        return None;
+        return Err(SearchSkip::Small);
     }
     let lines: Vec<&str> = text
         .lines()
@@ -246,7 +294,26 @@ pub fn shape_search(
     let parsed: Vec<Option<Parsed>> = lines.iter().map(|l| parse_line(l)).collect();
     let ok = parsed.iter().filter(|p| p.is_some()).count();
     if lines.is_empty() || ok * 10 < lines.len() * 9 {
-        return None; // not grep-shaped (e.g. single-file output without paths)
+        // not grep-shaped (e.g. single-file output without paths): record what it looked like
+        let mut forms: Vec<(&'static str, usize)> = Vec::new();
+        for l in lines
+            .iter()
+            .zip(&parsed)
+            .filter(|(_, p)| p.is_none())
+            .map(|(l, _)| l)
+        {
+            let f = line_form(l);
+            match forms.iter_mut().find(|(k, _)| *k == f) {
+                Some((_, n)) => *n += 1,
+                None => forms.push((f, 1)),
+            }
+        }
+        forms.sort_by_key(|f| std::cmp::Reverse(f.1));
+        return Err(SearchSkip::Unparsed {
+            lines: lines.len(),
+            parsed: ok,
+            forms,
+        });
     }
 
     // group by path, keep first-appearance order
@@ -324,9 +391,9 @@ pub fn shape_search(
     out.push('\n');
 
     if omitted == 0 && (out.len() as f64) > text.len() as f64 * (1.0 - cfg.search_min_saving) {
-        return None;
+        return Err(SearchSkip::LowSaving);
     }
-    Some(SearchShape {
+    Ok(SearchShape {
         text: out,
         matches,
         files: order.len(),
@@ -510,7 +577,31 @@ mod tests {
         let text: String = (0..400)
             .map(|i| format!("{i}:    some matching line content here\n"))
             .collect();
-        assert!(shape_search(&text, None, &ShapeConfig::default(), None).is_none());
+        let skip = shape_search(&text, None, &ShapeConfig::default(), None).unwrap_err();
+        assert_eq!(skip.reason(), "unparsed");
+        assert_eq!(
+            skip,
+            SearchSkip::Unparsed {
+                lines: 400,
+                parsed: 0,
+                forms: vec![("lineno_only", 400)]
+            }
+        );
+        assert!(matches!(
+            shape_search("a.rs:1:x\n", None, &ShapeConfig::default(), None),
+            Err(SearchSkip::Small)
+        ));
+    }
+
+    #[test]
+    fn line_forms() {
+        assert_eq!(line_form("12:  let x = 1;"), "lineno_only");
+        assert_eq!(line_form("src/main.rs"), "path_only");
+        assert_eq!(line_form("C:\\repo\\a.cs"), "path_only");
+        assert_eq!(line_form("{\"type\":\"match\"}"), "json");
+        assert_eq!(line_form("42"), "number");
+        assert_eq!(line_form("Binary file x.bin matches"), "binary_notice");
+        assert_eq!(line_form("hello world"), "other");
     }
 
     #[test]

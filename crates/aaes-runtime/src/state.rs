@@ -75,12 +75,40 @@ impl State {
             .is_some_and(|n| n > 0)
     }
 
+    /// Remember that `key` was shaped (when, how many head lines were shown, total lines), so a
+    /// follow-up read of the same file can be measured against it (diagnostics).
+    pub fn mark_shaped(&mut self, ctx: &str, key: &str, head_lines: usize, total_lines: usize) {
+        let c = self.ctx(ctx);
+        if !c.get("shaped").is_some_and(Value::is_object) {
+            c.insert("shaped".into(), json!({}));
+        }
+        c.get_mut("shaped")
+            .and_then(Value::as_object_mut)
+            .expect("object")
+            .insert(
+                key.to_owned(),
+                json!({ "ts": now_ms(), "head": head_lines, "total": total_lines }),
+            );
+    }
+
+    /// `(ms since shaped, head lines shown, total lines)` if `key` was shaped in this epoch.
+    pub fn shaped_info(&mut self, ctx: &str, key: &str) -> Option<(u64, usize, usize)> {
+        let s = self.ctx(ctx).get("shaped")?.get(key)?;
+        let ts = s["ts"].as_u64()?;
+        Some((
+            now_ms().saturating_sub(ts),
+            s["head"].as_u64()? as usize,
+            s["total"].as_u64()? as usize,
+        ))
+    }
+
     /// New context epoch: the model no longer has earlier content (compaction, clear, resume).
     pub fn reset(&mut self, ctx: &str) {
         let c = self.ctx(ctx);
         let epoch = c.get("epoch").and_then(Value::as_u64).unwrap_or(0) + 1;
         c.insert("epoch".into(), json!(epoch));
         c.insert("reads".into(), json!({}));
+        c.insert("shaped".into(), json!({}));
     }
 
     pub fn epoch(&mut self, ctx: &str) -> u64 {
@@ -109,7 +137,13 @@ mod tests {
         s.save(&dir).unwrap();
         let mut s2 = State::load(&dir);
         assert!(s2.was_read("main", "read:a.cs"));
+        s2.mark_shaped("main", "read:a.cs", 40, 900);
+        let (ms, head, total) = s2.shaped_info("main", "read:a.cs").unwrap();
+        assert!(ms < 60_000);
+        assert_eq!((head, total), (40, 900));
+        assert!(s2.shaped_info("agent-1", "read:a.cs").is_none());
         s2.reset("main");
+        assert!(s2.shaped_info("main", "read:a.cs").is_none());
         assert_eq!(s2.epoch("main"), 1);
         assert_eq!(s2.bump_read("main", "read:a.cs"), 0);
         let _ = std::fs::remove_dir_all(&dir);
