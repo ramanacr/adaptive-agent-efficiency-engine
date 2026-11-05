@@ -1,4 +1,4 @@
-# Architecture and Architecture Decision Records — AAES v0.6
+# Architecture and Architecture Decision Records — AAES v0.7
 
 ## 0. Change log
 | Version | Date | Change |
@@ -9,6 +9,7 @@
 | 0.4 | 2026-11-03 | Added ADR-022 (large-file read shaping) and ADR-023 (search-result shaping) as the M1 targets, following M-1 evidence. ADR-001 parser priority now follows measured cost. |
 | 0.5 | 2026-11-04 | M1 spike (`docs/spikes/M1-hook-spike.md`): **ADR-021 accepted** (HTTP hooks + resident `aaes serve` on Windows). ADR-002 hook table confirmed for Claude Code 2.1.233, with output shapes recorded. |
 | 0.6 | 2026-11-04 | ADR-011 amended (M1 implementation): session state is JSON + files, with SQLite deferred to M4. ADR-021 implementation notes: a Windows handle-inheritance fix and `--port` in the ensure command. |
+| 0.7 | 2026-11-05 | Added ADR-024 (web-search admission control, PROPOSED): session-scoped result cache, single-flight, global pacing, adaptive rate with circuit breaker, optional redirect to a user-installed search tool. Gated on `aaes mine` evidence and a hook spike. |
 
 ## Reference architecture
 ```
@@ -174,6 +175,61 @@ The raw content is kept (ADR-005), so nothing becomes unreachable. **Ask twice, 
 
 No reordering within a file; the files' order follows the tool's. **Why:** ≈ 3.7% of input, and repeated path prefixes and over-broad matches are pure overhead. **Tradeoff:** a capped file may hide the relevant match, so the cap is generous and per-file counts make the gap visible.
 
+## ADR-024 — Web-search admission control (PROPOSED v0.7)
+**Context:** Claude Code's `WebSearch` runs on the provider side, so its rate limit is enforced upstream and AAES cannot raise it. The suspected failure pattern, to be confirmed by measurement (entry gate below):
+- **bursts**: parallel sub-agents issue several searches in the same second;
+- **duplicate queries**: the main agent and its sub-agents search for the same thing, or the same words in another order, within minutes;
+- **retry storms**: after a rate-limit error the model retries at once, often with a reworded query, which spends turns and keeps the limit tripped.
+
+Shaping search *output* (as in ADR-023) saves tokens but does nothing for the rate limit, so it is not part of this decision.
+
+**Decision:** add admission control for `WebSearch` in `aaes serve` (ADR-021), the only component that sees every session and sub-agent, through `PreToolUse` and `PostToolUse` (plus `PostToolUseFailure` where the pinned version fires it for this tool). Off by default; enabled with `web_search.enabled`. In command-hook fallback mode there is no shared state, so `WebSearch` passes through untouched (no file-lock emulation).
+1. **Query fingerprint (deterministic, ADR-001).** NFC-normalise, lowercase, collapse whitespace and split into terms, keeping quoted phrases and operators (`site:`, `-term`) as single terms. Sort the unique terms and append the sorted `allowed_domains`/`blocked_domains`. This catches reordered and re-spaced duplicates, while numbers such as years and versions stay significant. No semantic similarity and no model.
+2. **Session-scoped result cache.** Key = session + fingerprint; TTL default 30 min. The result captured at `PostToolUse` is stored as a raw artifact (encrypted, SEC-012; retention, SEC-014). A session includes its sub-agent contexts, which is where most duplicates come from. This is the explicit cache declaration that ADR-006 requires for a time-varying tool, with TTL instead of invalidation. A user-scoped cache shared across sessions (`web_search.cache_scope = "user"`) is an opt-in exception to ADR-003, off by default, because queries often carry internal names copied from error messages.
+   **Delivery on a hit:** a `PreToolUse` `deny` is the only way to prevent the upstream call, so the cached result travels in `permissionDecisionReason`, framed as `[aaes] cached web search result · same query 4 min ago in this session · not an error, no new search made`, followed by the result between explicit untrusted-web-content delimiters. The once-per-session notice (FUN-016) explains this. Unlike seen-state (ADR-014), a hit delivers the full content, so compaction does not invalidate it.
+3. **Single-flight.** If the same fingerprint is already in flight in the session, the follower's `PreToolUse` request is held until the leader's post-event arrives (matched by `tool_use_id`) or `max_wait_ms` expires, and is then served from the cache. If the leader fails or times out, the follower is admitted normally (subject to item 4).
+4. **Pacing (global, content-free).** A per-user cap on searches in flight (`max_in_flight`) and a token bucket (`rate.per_minute`, `rate.burst`) across all sessions. These are counters only, so a global scope is compatible with ADR-003. Without a token, the hook holds its HTTP response (FIFO) for up to `max_wait_ms`; HTTP hooks have a long default timeout, so a short hold is safe. Past that it denies with `search budget exhausted · retry after Ns · continue with what you have`. In-flight slots are released by the post-event for that `tool_use_id`, or by a lease timeout when none arrives (user interrupt, crash).
+5. **Adaptive rate and circuit breaker.** Rate-limit signals in the post-event (HTTP 429, "rate limit", "too many requests"; a versioned pattern list, like the command registry) trigger:
+   - multiplicative decrease: `rate = max(min_rate, rate / 2)`;
+   - breaker open for `base_cooldown · 2^k` (capped at `max_cooldown`, ±20% jitter). While open, `PreToolUse` denies immediately with the retry-after time and guidance: use sources already found, `WebFetch` a known URL, don't reword the same query;
+   - half-open after the cooldown: one probe call, and a success closes the breaker;
+   - additive increase: +1 per minute after N consecutive successes, up to the configured ceiling.
+
+   The rate converges below the real limit without AAES knowing the published number. State is in memory and resets when the server restarts.
+6. **Fallback search tool (redirect only).** Optional `web_search.fallback_tool` names a search tool the user has installed (e.g. an MCP server backed by SearXNG, Brave or Tavily). Budget and breaker denials name it. AAES itself makes no outbound network calls and holds no provider keys (SEC-010 unchanged).
+
+```json
+"web_search": {
+  "enabled": false,
+  "cache_ttl_secs": 1800,
+  "cache_scope": "session",
+  "max_in_flight": 2,
+  "rate": { "per_minute": 10, "burst": 3, "adaptive": true },
+  "max_wait_ms": 20000,
+  "breaker": { "base_cooldown_secs": 30, "max_cooldown_secs": 600 },
+  "fallback_tool": null
+}
+```
+Values are placeholders until calibrated from MET-017 data.
+
+**Implementation constraints:**
+- `aaes serve` is thread-per-connection, so a held search request doesn't stall Read/Grep hooks. Waits use their own mutex/condvar and never hold the session-state mutex (ADR-011). Parked requests are capped (default 32); beyond the cap, deny at once so threads stay bounded.
+- `WebSearch` is added to the `PreToolUse` and post-event matchers only when the feature is enabled (`aaes init` re-run; settings changes need the user's approval). The ~27 ms per hooked call is negligible next to a web search.
+- Every decision emits a content-free event (MET-017). Logs and events hold the fingerprint hash, never query text.
+
+**Spike (before acceptance), on the pinned Claude Code version:**
+1. `PreToolUse`/`PostToolUse` fire for `WebSearch`, including inside sub-agents, with matching `tool_use_id` and `session_id`.
+2. Where an upstream rate-limit error surfaces (`PostToolUse.tool_response` or `PostToolUseFailure`) and its exact text. (2.1.233 fires no `PostToolUseFailure` for Edit validation errors, so don't assume it fires here.)
+3. How a `deny` reason reaches the model: size limit, rendering, and whether the model keeps using `WebSearch` after a cache-hit deny or treats the tool as blocked.
+4. Whether the model gives a deny reason more authority than a tool result (prompt-injection exposure for cached web content; A13 in `06_THREAT_MODEL.md`).
+
+If 3 or 4 fails, drop cache delivery (items 2–3) and keep pacing and the breaker (items 4–5), which only delay or deny and carry no content.
+
+**Entry gate:** `aaes mine` (MET-017 baseline) shows a material problem in real transcripts: rate-limit errors, bursts or duplicate queries. Otherwise this ADR stays PROPOSED.
+
+**Why:** the provider limit is a shared budget. Spending it on duplicates and bursts, and burning turns on retries into an open limit, are the avoidable parts. The resident server already exists, so this is small, deterministic and local.
+**Tradeoffs:** a deny-framed cache hit may confuse the model (spike 3); a held request adds visible latency to the agent; cached results can be up to one TTL old, which matters for time-sensitive queries; the breaker may deny searches that would have succeeded just after a transient error (the half-open probe limits this).
+
 ## Contracts and pseudo-schemas
 ### Session capability
 ```
@@ -250,3 +306,5 @@ Session: CREATED -> ACTIVE -> IDLE -> SUSPENDED -> CLOSED -> EXPIRED. Closed ses
 - **Compromised dependency or release artifact**: ADR-018 (signing, provenance, cargo-deny, minimal hot-path deps).
 - **Private data committed to the public repo**: ADR-020 (git-ignored private corpus, secret scan, provenance file).
 - Provider caching changes true economics: reconcile usage; use the cache-aware cost model; don't equate text compression with money saved.
+- **Web-search rate limits and retry storms**: ADR-024 (dedupe, pacing, adaptive rate and breaker). AAES never raises upstream limits and makes no network calls of its own.
+- **Cached web content as an injection vector or a stale answer**: untrusted-content delimiters, session scope by default, TTL, spike gate (ADR-024; A13 in `06_THREAT_MODEL.md`).

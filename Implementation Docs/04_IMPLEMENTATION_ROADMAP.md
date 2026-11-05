@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v0.6
+# Implementation Roadmap — AAES v0.7
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -11,12 +11,14 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 0.4 | 2026-11-03 | **M1 re-targeted to read and search shaping** (ADR-022/023) on M-1 evidence. Build/test parsers moved to M3. Sub-agent hook coverage and rebound/Edit-failure metrics added to M1/M2. |
 | 0.5 | 2026-11-04 | M1 spike done (`docs/spikes/M1-hook-spike.md`): all four assumptions confirmed; ADR-021 accepted, so `aaes serve` (HTTP hooks) is part of M1 on Windows. |
 | 0.6 | 2026-11-04 | **M1 increment 1 delivered** and contract-tested with Claude Code (`docs/spikes/M1-contract-test.md`). Status markers added to M1; repository layout updated to the real crates. |
+| 0.7 | 2026-11-05 | Added **M2b, web-search admission control** (ADR-024, FUN-027), gated on a new M-1 measurement (MET-017 baseline). |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
 - ✅ Run on the maintainer's machine (2026-11-03): **verdict GO** with bytes/token calibrated from transcripts. Context-lever metrics added (unchanged re-reads, large whole-file reads, shell file reads, sub-agent split). Detailed numbers are kept privately (ADR-020).
 - ✅ Calibration validated against the `count_tokens` API (`tools/calibration-check`, 60 samples across 5 models): the transcript-derived estimate is within ~5% of API counts and slightly over-counts tokens, so it's conservative for savings claims. Verdict unchanged (GO).
 - ☐ Codex: re-run once Codex sessions exist locally (`--probe` first).
+- ☐ Web-search baseline (MET-017): extend `aaes mine` with `WebSearch` counts, exact and reordered duplicates, bursts, rate-limit errors and the retries after them. Entry gate for M2b (ADR-024).
 - Report: token share by tool/command family, top 20 commands, result-size distribution, occupancy, compactions, re-run rate, cache-write/read mix.
 
 **Exit**: go/no-go decision recorded, plus a ranked list of target command families that seeds M0 fixtures and M1 parsers.
@@ -75,6 +77,19 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - Tune per-family policies (versioned config) via offline replay.
 
 **Exit**: net-positive on the representative workload *and* a material gain over A′, or a documented re-scope.
+
+## M2b — Web-search admission control *(gated, ADR-024)*
+**Entry gate**: the MET-017 baseline from `aaes mine` shows a material problem (WebSearch rate-limit errors, bursts or duplicate queries in real transcripts).
+- **Spike** on the pinned Claude Code version: hooks fire for `WebSearch` (main and sub-agents) with matching `tool_use_id`; where and how rate-limit errors surface; how a `deny` reason reaches the model (size, rendering, whether the model keeps searching after a cache-hit deny, whether it treats the reason as instructions).
+- Build in order of risk, lowest first:
+  1. **Adaptive rate + circuit breaker** (content-free): stops retry storms, the cheapest win.
+  2. **Global pacing**: in-flight cap and token bucket with a bounded, FIFO wait; parked-request cap.
+  3. **Session cache + single-flight**: only if spike items 3 and 4 pass.
+  4. **`fallback_tool` redirect** in denial reasons.
+- `aaes init` adds `WebSearch` to the matchers only when `web_search.enabled`; `aaes report` gains the MET-017 section.
+- Replay tests: synthetic bursts from parallel sub-agents, reordered duplicate queries, rate-limit sequences, leader failure in single-flight, lease expiry, server restart.
+
+**Exit**: upstream rate-limit errors per 100 searches fall on dogfood sessions with no rise in failed tasks or abandoned searches; Read/Grep hook latency unchanged while searches are held.
 
 ## M3 — Coverage expansion
 - Codex adapter: `AGENTS.md` instructions + `PreToolUse` deny-redirect, or an MCP shell server (FUN-021).
@@ -149,6 +164,7 @@ No LLM, no vectors. On Windows the handler runs inside `aaes serve` (ADR-021); e
 8. Codex rollout format: validate parser assumptions with `aaes mine --probe` on real rollouts before trusting Codex numbers.
 9. Initial-context overhead (MET-014): if it dominates, is tool-schema/context trimming in scope? Decide after M-1.
 10. **Windows process-spawn floor (measured 2026-11-03):** 50–100 ms for unsigned executables outside System32 on a managed laptop. AAES's own overhead ≈ 0. Investigate ADR-021 (HTTP hooks + resident `aaes serve`), the effect of signing and install location, and include the spawn floor in the M0 cold-start benchmark as a separate line.
+11. **Web-search rate limits (2026-11-05):** can AAES reduce upstream `WebSearch` rate-limit errors without raising limits or making network calls? Proposed answer in ADR-024; open until the MET-017 baseline and the M2b spike.
 
 ## Stop conditions
 Stop optimization and fall back to raw tool result on failed validation, uncertain critical information, unknown structured schema, unknown command class, interactive/long-running command, result below size threshold, stale cache dependency, unavailable inference, unsupported hook version, or budget overrun. Deny execution (not pass through) when authorization fails. Never silently suppress command errors, authorization failures or agent-visible tool protocol errors.

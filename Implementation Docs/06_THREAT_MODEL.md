@@ -1,4 +1,4 @@
-# Threat Model — AAES v0.3
+# Threat Model — AAES v0.4
 
 Status: Proposed (SEC-011, ADR-013). This document defines what each isolation tier does and does **not** protect against. Product and documentation wording must not claim more than this.
 
@@ -11,6 +11,7 @@ Status: Proposed (SEC-011, ADR-013). This document defines what each isolation t
 | Telemetry / metrics events | Local event log, aggregates | Low (content-free by design) |
 | Policies and command registry | Versioned config | Integrity-critical |
 | Agent settings files (hooks) | `~/.claude/settings.json`, `AGENTS.md`, etc. | Integrity-critical |
+| Cached web-search results and query fingerprints (ADR-024, when enabled) | Per-session encrypted artifact store; counters and fingerprints in `aaes serve` memory | Medium (queries often carry internal names copied from errors) |
 
 ## Adversaries and defending boundaries
 | # | Adversary / failure | Example | Standard | Hardened | High-assurance |
@@ -27,14 +28,16 @@ Status: Proposed (SEC-011, ADR-013). This document defines what each isolation t
 | A10 | **OS administrator / kernel-level attacker** | — | Out of scope | Out of scope | Out of scope (state the boundary) |
 | A11 | **Supply-chain compromise** (malicious dependency, tampered release) | Backdoored crate exfiltrates tool output from every hook call | **Mitigated** (ADR-018): minimal hot-path deps, `cargo-deny`/audit, locked builds, signed releases with provenance, SBOM | Same + pinned internal mirror | Same + reproducible-build verification |
 | A12 | **Private data leaking into the public repo** | Contributor commits a real transcript or proprietary fixture | **Mitigated** (ADR-020): git-ignored `bench-private/`, secret scan in CI, fixture provenance review | Same | Same |
+| A13 | **Untrusted web content delivered through a hook decision** (ADR-024) | A cached search result containing "ignore previous instructions" is delivered in a `PreToolUse` deny reason, which the model may weigh more than a tool result | **Mitigated**: explicit untrusted-content delimiters; content identical to what the original search delivered; cache delivery ships only if the spike shows the model treats the reason as data; session scope by default | Same | Same |
 
 ## Implications
 - The Standard tier is a **correctness and hygiene** boundary, not a security boundary between mutually hostile sessions of the same user. This is acceptable for the target use case: one developer running several of their own agent sessions.
 - Principal-bound capabilities (`token_binding`) are only meaningful when sessions run under distinct principals, so they belong to Hardened (SEC-001 Hardened, M6).
 - Users running untrusted repositories or agents that may face hostile prompt injection should use Hardened or High-assurance (per-session OS principal, container or VM).
+- The opt-in user-scoped web-search cache (`web_search.cache_scope = "user"`) deliberately shares queries and results across the same user's sessions. It is off by default. Global pacing counters are content-free and need no isolation.
 
 ## Mandatory tests by tier
-- **Standard:** A1, A2, A3 (AAES behaviour), A5, A7, A9 (if inference is on). Zero tolerance. A11/A12 are CI and release gates for every tier.
+- **Standard:** A1, A2, A3 (AAES behaviour), A5, A7, A9 (if inference is on), A13 (if web-search caching is on). Zero tolerance. A11/A12 are CI and release gates for every tier.
 - **Hardened:** all Standard tests + A4 direct file-access attempts from a session under a different principal + A8 install-dir ACL checks.
 - **High-assurance:** all Hardened tests + escape attempts across the chosen container/VM boundary.
 
