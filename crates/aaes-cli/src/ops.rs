@@ -260,16 +260,28 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
     let mut by: BTreeMap<(String, String), Agg> = BTreeMap::new();
     let (mut sessions, mut rebound_bytes, mut rebound_n) = (0u64, 0u64, 0u64);
     let mut fam: BTreeMap<&'static str, Family> = BTreeMap::new();
+    let mut edits = Edits::default();
+    let claude_root = aaes_transcripts::discover::default_claude_root();
     if let Ok(rd) = std::fs::read_dir(rt.home.join("sessions")) {
         for e in rd.flatten() {
             let Ok(text) = std::fs::read_to_string(e.path().join("events.jsonl")) else {
                 continue;
             };
             sessions += 1;
+            // (time, file key hash) of every shaped whole-file read, and when AAES first saw this
+            // session, for MET-016.
+            let mut shaped: Vec<(u64, String)> = Vec::new();
+            let mut first_ts = u64::MAX;
             for line in text.lines() {
                 let Ok(v) = serde_json::from_str::<Value>(line) else {
                     continue;
                 };
+                first_ts = first_ts.min(v["ts"].as_u64().unwrap_or(u64::MAX));
+                if v["action"] == "shaped" && family_of(v["kind"].as_str()) == "read" {
+                    if let Some(k) = v["key"].as_str() {
+                        shaped.push((v["ts"].as_u64().unwrap_or(0), k.to_owned()));
+                    }
+                }
                 let kind = v["kind"].as_str().unwrap_or("?").to_owned();
                 let action = v["action"].as_str().unwrap_or("?").to_owned();
                 let raw = v["raw_bytes"].as_u64().unwrap_or(0);
@@ -289,6 +301,9 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                     f.shaped_n += 1;
                     f.saved += raw.saturating_sub(v["delivered_bytes"].as_u64().unwrap_or(0));
                 }
+            }
+            if let (Some(root), Some(id)) = (&claude_root, e.file_name().to_str()) {
+                edits.add_session(root, id, first_ts, &shaped);
             }
         }
     }
@@ -316,6 +331,7 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                     "follow_ups_per_shaped": f.follow_ups_per_shaped(),
                     "ok": f.ok(bpt),
                 }))).collect::<serde_json::Map<String, Value>>(),
+                "edits": edits.json(),
                 "bytes_per_token": bpt
             })
         );
@@ -366,7 +382,109 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
             );
         }
     }
+    edits.print();
     Ok(())
+}
+
+/// MET-016 Edit failure rate from the Claude Code transcripts of AAES sessions (edits after the
+/// session's first AAES event only), split by whether
+/// the file was shown shaped earlier in the session (any context). User-rejected calls are counted
+/// apart: they say nothing about the agent's view of the file.
+#[derive(Default)]
+struct Edits {
+    /// `[after a shaped read, other files]`: (calls, failures).
+    split: [(u64, u64); 2],
+    excluded: u64,
+    classes: BTreeMap<String, u64>,
+}
+
+impl Edits {
+    fn add_session(
+        &mut self,
+        claude_root: &std::path::Path,
+        session_id: &str,
+        since_ms: u64,
+        shaped: &[(u64, String)],
+    ) {
+        use aaes_transcripts::edits;
+        for f in edits::session_files(claude_root, session_id) {
+            let Ok(file) = std::fs::File::open(&f) else {
+                continue;
+            };
+            for o in edits::edit_outcomes(std::io::BufReader::new(file)) {
+                // Only edits made while AAES was active in this session.
+                if o.ts_ms.is_none_or(|ts| ts < since_ms) {
+                    continue;
+                }
+                let key = aaes_runtime::events::fnv_hex(&hook::read_key(&o.path, o.cwd.as_deref()));
+                let after = shaped
+                    .iter()
+                    .any(|(t, k)| *k == key && o.ts_ms.is_some_and(|ts| *t <= ts));
+                self.add(after, o.failed, o.class);
+            }
+        }
+    }
+
+    fn add(&mut self, after_shaped: bool, failed: bool, class: &str) {
+        if class == "rejected" {
+            self.excluded += 1;
+            return;
+        }
+        let s = &mut self.split[usize::from(!after_shaped)];
+        s.0 += 1;
+        if failed {
+            s.1 += 1;
+            *self.classes.entry(class.to_owned()).or_default() += 1;
+        }
+    }
+
+    fn rate(c: (u64, u64)) -> Option<f64> {
+        (c.0 > 0).then(|| c.1 as f64 * 100.0 / c.0 as f64)
+    }
+
+    fn total(&self) -> (u64, u64) {
+        (
+            self.split[0].0 + self.split[1].0,
+            self.split[0].1 + self.split[1].1,
+        )
+    }
+
+    fn json(&self) -> Value {
+        let part = |c: (u64, u64)| serde_json::json!({"calls": c.0, "failed": c.1, "failure_pct": Self::rate(c)});
+        serde_json::json!({
+            "all": part(self.total()),
+            "after_shaped": part(self.split[0]),
+            "other": part(self.split[1]),
+            "excluded_rejected": self.excluded,
+            "failure_classes": self.classes,
+        })
+    }
+
+    fn print(&self) {
+        if self.total().0 == 0 && self.excluded == 0 {
+            return;
+        }
+        println!(
+            "\nMET-016 Edit failures, from transcripts of these sessions (user-rejected excluded: {})",
+            self.excluded
+        );
+        for (label, c) in [
+            ("all", self.total()),
+            ("after shaped read", self.split[0]),
+            ("other files", self.split[1]),
+        ] {
+            let pct = Self::rate(c).map_or("-".to_owned(), |p| format!("{p:.1}%"));
+            println!("  {label:<18} {:>5} calls {:>4} failed {pct:>7}", c.0, c.1);
+        }
+        if !self.classes.is_empty() {
+            let list: Vec<String> = self
+                .classes
+                .iter()
+                .map(|(k, n)| format!("{k} {n}"))
+                .collect();
+            println!("  failure classes: {}", list.join(", "));
+        }
+    }
 }
 
 /// Shaping family for MET-015: whole-file reads (Read tool or shell) vs search.
@@ -500,6 +618,27 @@ mod tests {
         let src = std::io::Cursor::new("\u{feff}{\"hook_event_name\":\"SessionStart\"}");
         let v = read_json_from(src, Duration::from_secs(2));
         assert_eq!(v["hook_event_name"], "SessionStart");
+    }
+
+    #[test]
+    fn edit_failure_rate_split_by_shaped() {
+        let mut e = Edits::default();
+        for (shaped, failed, class) in [
+            (true, false, "ok"),
+            (true, true, "not_found"),
+            (false, false, "ok"),
+            (false, false, "ok"),
+            (false, true, "rejected"),
+        ] {
+            e.add(shaped, failed, class);
+        }
+        let j = e.json();
+        assert_eq!(j["after_shaped"]["calls"], 2);
+        assert_eq!(j["after_shaped"]["failure_pct"], 50.0);
+        assert_eq!(j["other"]["failed"], 0);
+        assert_eq!(j["all"]["calls"], 4);
+        assert_eq!(j["excluded_rejected"], 1);
+        assert_eq!(j["failure_classes"]["not_found"], 1);
     }
 
     #[test]

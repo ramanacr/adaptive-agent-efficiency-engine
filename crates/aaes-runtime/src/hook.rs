@@ -169,7 +169,8 @@ fn replace(new_response: Value, extra_context: Option<String>) -> Value {
 }
 
 /// Normalised key for "the same file" (case/separator-insensitive, relative paths resolved).
-fn read_key(path: &str, cwd: Option<&str>) -> String {
+/// Events store its [`events::fnv_hex`]; `aaes report` rebuilds it from transcripts (MET-016).
+pub fn read_key(path: &str, cwd: Option<&str>) -> String {
     let p = path.trim_matches(['"', '\'']);
     let abs = match cwd {
         Some(c) if !Path::new(p).is_absolute() && !p.starts_with('/') && !p.starts_with('\\') => {

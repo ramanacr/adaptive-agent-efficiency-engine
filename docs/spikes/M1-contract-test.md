@@ -34,6 +34,6 @@
 
 ## Follow-ups
 - Automate this contract test as a scripted, version-pinned check (FUN-014: a shape mismatch is silently ignored by Claude Code).
-- MET-016 Edit-failure instrumentation (`PostToolUseFailure` for Edit/MultiEdit).
-- SEC-012 encryption at rest and SEC-013 redaction for stored search outputs.
+- ~~MET-016 Edit-failure instrumentation (`PostToolUseFailure` for Edit/MultiEdit).~~ Done from transcripts instead (2026-11-05): with Claude Code 2.1.233, a failed Edit (`String to replace not found`) fires no `PostToolUseFailure` hook. Bad `old_string` errors come from input validation, before the tool runs. A successful Edit does fire `PostToolUse`. `aaes report` reads the session transcripts.
+- ~~SEC-012 encryption at rest and SEC-013 redaction for stored search outputs.~~ Done 2026-11-05.
 - First-start latency: `serve --ensure` waited ~2 s for the first health check on a fresh binary (endpoint scanning). Consider not waiting, since hooks fail open until the server is up.

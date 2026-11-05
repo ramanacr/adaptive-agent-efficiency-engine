@@ -8,6 +8,7 @@ pub mod analyze;
 pub mod claude;
 pub mod codex;
 pub mod discover;
+pub mod edits;
 pub mod model;
 pub mod probe;
 pub mod report;
