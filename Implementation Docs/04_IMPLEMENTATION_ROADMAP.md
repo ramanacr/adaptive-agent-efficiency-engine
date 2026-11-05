@@ -80,6 +80,8 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 
 ## M2b — Web-search admission control *(gated, ADR-024)*
 **Entry gate**: the MET-017 baseline from `aaes mine` shows a material problem (WebSearch rate-limit errors, bursts or duplicate queries in real transcripts).
+
+**Status (2026-11-05): gate not met; ADR-024 stays PROPOSED.** On the maintainer's transcripts, rate-limit errors and duplicate queries are rare. Searches do come in heavy bursts from parallel research sub-agents, and after a rate-limit error agents keep searching with reworded queries, so pacing and the breaker are the parts to revisit first. Re-run `aaes mine` after more research-heavy work, or when users report search rate limits.
 - **Spike** on the pinned Claude Code version: hooks fire for `WebSearch` (main and sub-agents) with matching `tool_use_id`; where and how rate-limit errors surface; how a `deny` reason reaches the model (size, rendering, whether the model keeps searching after a cache-hit deny, whether it treats the reason as instructions).
 - Build in order of risk, lowest first:
   1. **Adaptive rate + circuit breaker** (content-free): stops retry storms, the cheapest win.
@@ -164,7 +166,7 @@ No LLM, no vectors. On Windows the handler runs inside `aaes serve` (ADR-021); e
 8. Codex rollout format: validate parser assumptions with `aaes mine --probe` on real rollouts before trusting Codex numbers.
 9. Initial-context overhead (MET-014): if it dominates, is tool-schema/context trimming in scope? Decide after M-1.
 10. **Windows process-spawn floor (measured 2026-11-03):** 50–100 ms for unsigned executables outside System32 on a managed laptop. AAES's own overhead ≈ 0. Investigate ADR-021 (HTTP hooks + resident `aaes serve`), the effect of signing and install location, and include the spawn floor in the M0 cold-start benchmark as a separate line.
-11. **Web-search rate limits (2026-11-05):** can AAES reduce upstream `WebSearch` rate-limit errors without raising limits or making network calls? Proposed answer in ADR-024; open until the MET-017 baseline and the M2b spike.
+11. **Web-search rate limits (2026-11-05):** can AAES reduce upstream `WebSearch` rate-limit errors without raising limits or making network calls? Proposed answer in ADR-024. The MET-017 baseline (2026-11-05) did not meet the entry gate, so it stays open and PROPOSED; re-measure later.
 
 ## Stop conditions
 Stop optimization and fall back to raw tool result on failed validation, uncertain critical information, unknown structured schema, unknown command class, interactive/long-running command, result below size threshold, stale cache dependency, unavailable inference, unsupported hook version, or budget overrun. Deny execution (not pass through) when authorization fails. Never silently suppress command errors, authorization failures or agent-visible tool protocol errors.

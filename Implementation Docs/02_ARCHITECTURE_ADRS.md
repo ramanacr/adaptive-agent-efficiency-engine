@@ -219,13 +219,15 @@ Values are placeholders until calibrated from MET-017 data.
 
 **Spike (before acceptance), on the pinned Claude Code version:**
 1. `PreToolUse`/`PostToolUse` fire for `WebSearch`, including inside sub-agents, with matching `tool_use_id` and `session_id`.
-2. Where an upstream rate-limit error surfaces (`PostToolUse.tool_response` or `PostToolUseFailure`) and its exact text. (2.1.233 fires no `PostToolUseFailure` for Edit validation errors, so don't assume it fires here.)
+2. Where an upstream rate-limit error surfaces (`PostToolUse.tool_response` or `PostToolUseFailure`) and its exact text. (2.1.233 fires no `PostToolUseFailure` for Edit validation errors, so don't assume it fires here.) Transcripts already answer part of this: a failed search is a normal, non-error result whose text contains `Web search error: <code>`, with `too_many_requests` for the rate limit. Expect it in `PostToolUse`, not in a failure event.
 3. How a `deny` reason reaches the model: size limit, rendering, and whether the model keeps using `WebSearch` after a cache-hit deny or treats the tool as blocked.
 4. Whether the model gives a deny reason more authority than a tool result (prompt-injection exposure for cached web content; A13 in `06_THREAT_MODEL.md`).
 
 If 3 or 4 fails, drop cache delivery (items 2–3) and keep pacing and the breaker (items 4–5), which only delay or deny and carry no content.
 
 **Entry gate:** `aaes mine` (MET-017 baseline) shows a material problem in real transcripts: rate-limit errors, bursts or duplicate queries. Otherwise this ADR stays PROPOSED.
+
+**Gate result (2026-11-05): not met; stays PROPOSED.** On the maintainer's transcripts, upstream rate-limit errors and duplicate queries are rare, so the cache and single-flight (items 2–3) would save almost nothing. Bursts from parallel sub-agents are common, and agents keep searching with reworded queries after a rate-limit error; if the gate is met later, start with pacing and the breaker (items 4–5). Numbers are kept privately (ADR-020).
 
 **Why:** the provider limit is a shared budget. Spending it on duplicates and bursts, and burning turns on retries into an open limit, are the avoidable parts. The resident server already exists, so this is small, deterministic and local.
 **Tradeoffs:** a deny-framed cache hit may confuse the model (spike 3); a held request adds visible latency to the agent; cached results can be up to one TTL old, which matters for time-sensitive queries; the breaker may deny searches that would have succeeded just after a transient error (the half-open probe limits this).
