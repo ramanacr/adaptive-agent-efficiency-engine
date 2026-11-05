@@ -5,7 +5,9 @@ use std::io::BufReader;
 use std::path::PathBuf;
 
 use aaes_transcripts::analyze::{Settings, Weights};
-use aaes_transcripts::{Agent, Report, Session, analyze_sessions, claude, codex, discover, probe};
+use aaes_transcripts::{
+    Agent, Report, Session, analyze_sessions, claude, codex, discover, probe, websearch,
+};
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use rayon::prelude::*;
@@ -136,8 +138,21 @@ pub fn run(a: MineArgs) -> Result<()> {
         anonymize: a.anonymize,
         since: a.since,
     };
+    // MET-017 web-search baseline (ADR-024 entry gate): a second, prefiltered pass over the
+    // Claude Code files, which are in the OS file cache by now.
+    let since = settings.since.clone();
+    let web_calls: Vec<websearch::Call> = files
+        .par_iter()
+        .filter(|(agent, _)| *agent == Agent::ClaudeCode)
+        .flat_map_iter(|(_, path)| match File::open(path) {
+            Ok(f) => websearch::calls(BufReader::with_capacity(1 << 16, f), since.as_deref()),
+            Err(_) => Vec::new(),
+        })
+        .collect();
+
     let accs = analyze_sessions(&sessions, &settings);
-    let report = Report::build(accs, settings);
+    let mut report = Report::build(accs, settings);
+    report.web_search = Some(websearch::Baseline::from_calls(web_calls));
 
     if let Some(p) = &a.json {
         let f = File::create(p).with_context(|| format!("creating {}", p.display()))?;

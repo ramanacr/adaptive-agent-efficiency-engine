@@ -15,6 +15,9 @@ pub struct Report {
     pub settings: Settings,
     pub agents: Vec<AgentReport>,
     pub overall: Option<Overall>,
+    /// MET-017 web-search baseline (Claude Code transcripts), set by `aaes mine`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web_search: Option<crate::websearch::Baseline>,
 }
 
 #[derive(Debug, Serialize)]
@@ -268,6 +271,7 @@ impl Report {
             settings,
             agents,
             overall,
+            web_search: None,
         }
     }
 
@@ -512,6 +516,9 @@ impl Report {
             o,
             "- Usage covers model requests only. Output tokens aren't part of the share."
         );
+        if let Some(w) = &self.web_search {
+            w.write_markdown(&mut o);
+        }
         o
     }
 }

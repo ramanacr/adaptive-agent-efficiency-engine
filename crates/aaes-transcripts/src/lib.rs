@@ -12,6 +12,7 @@ pub mod edits;
 pub mod model;
 pub mod probe;
 pub mod report;
+pub mod websearch;
 
 /// Command-family parsing lives in `aaes-core`; re-exported for existing callers.
 pub use aaes_core::command;

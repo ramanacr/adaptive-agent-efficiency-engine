@@ -253,4 +253,4 @@ The server reads `config.json` when it starts. After a change, restart it: `aaes
 
 ## 12. Measure first: `aaes mine`
 
-`aaes mine` reads your existing Claude Code and Codex transcripts (read-only). It reports where tool-output tokens go, so you can see if AAES is worth trying. See the [README](../README.md#quick-start-measure-your-own-sessions-m-1) and `aaes mine --help`.
+`aaes mine` reads your existing Claude Code and Codex transcripts (read-only). It reports where tool-output tokens go, so you can see if AAES is worth trying. The report ends with a web-search section (MET-017): how many `WebSearch` calls you made, how many were duplicates, how often searches came in bursts, and how often the provider's rate limit was hit. It shows counts only, never query text. See the [README](../README.md#quick-start-measure-your-own-sessions-m-1) and `aaes mine --help`.
