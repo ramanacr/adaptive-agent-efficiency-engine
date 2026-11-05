@@ -205,12 +205,23 @@ pub fn line_form(line: &str) -> &'static str {
         "number"
     } else if l.starts_with("Binary file") || l.contains("binary file matches") {
         "binary_notice"
-    } else if plausible_path(l.trim_end()) && !l[2.min(l.len())..].contains(':') {
+    } else if plausible_path(l.trim_end()) && !without_drive(l).contains(':') {
         "path_only" // `grep -l`, or the file line of `rg --heading`
     } else if l.contains(':') {
         "colon_other"
     } else {
         "other"
+    }
+}
+
+/// `l` without a leading drive prefix (`C:`). Slices only after two ASCII bytes, so it never cuts
+/// a multi-byte character (a UTF-8 BOM, non-Latin path).
+fn without_drive(l: &str) -> &str {
+    let b = l.as_bytes();
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+        &l[2..]
+    } else {
+        l
     }
 }
 
@@ -642,6 +653,10 @@ mod tests {
         assert_eq!(line_form("42"), "number");
         assert_eq!(line_form("Binary file x.bin matches"), "binary_notice");
         assert_eq!(line_form("hello world"), "other");
+        // Multi-byte first character (a UTF-8 BOM from PowerShell output): no panic.
+        assert_eq!(line_form("\u{feff}src/main.rs"), "path_only");
+        assert_eq!(line_form("é/x.cs:3"), "colon_other");
+        assert_eq!(line_form("日本/a.cs"), "path_only");
     }
 
     #[test]
