@@ -64,6 +64,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - ✅ SEC-013 for M1 (no FTS/vector index yet): canary test proves a secret in tool output, a search pattern or a command never reaches the log, the event log, any file in the data folder, or the text that replaces an omitted region. Redaction before indexing lands with the M3 index.
 - ☐ SEC-012 macOS Keychain / Linux libsecret key wrapping
 - ✅ MET-016 Edit failure rate in `aaes report`, from the Claude Code transcripts of AAES sessions: Edit/MultiEdit calls made while AAES was active, failure class, and a split by "file shown shaped earlier in the session" vs other files. Not from hooks: Claude Code 2.1.233 fires no `PostToolUseFailure` for `old_string` validation errors, which are nearly all Edit failures.
+- ✅ Repo-index split: each event records whether the working folder is in a CodeGraph-indexed repo (`.codegraph/codegraph.db`), and `aaes report` splits calls and savings by it. Agents told to prefer CodeGraph make fewer shapeable calls there, so trial savings are read per group.
 - ☐ Scripted, version-pinned contract test · release pipeline (FUN-023)
 
 **Exit**: read/search fidelity goldens pass (exact retrieval of every omitted range; exact match totals); no tool regressions; delivered ≤ raw for every result; hook latency measured; two concurrent sessions isolated; measurable direct reduction on shaped families.

@@ -135,7 +135,21 @@ A **follow-up** is a read of a file after AAES shaped it in the same context. Fo
 
 The MET-015 verdict for a family (`read`, `search`) is `ok` when net tok is above 0 **and** there is at most 1 follow-up per shaped result. Otherwise the report says `review: raise the threshold or disable this family`.
 
-### 6.3 Edit failures (MET-016)
+### 6.3 By repo index (CodeGraph)
+
+Some agent setups tell the agent to use CodeGraph (a code-graph index with an MCP tool and a `codegraph` CLI) instead of grep and whole-file reads when the repo has an index. AAES does not hook CodeGraph's MCP tool, and it passes `codegraph` shell output through unchanged. So in an indexed repo, AAES sees fewer calls it can shape.
+
+To make this visible, AAES records for each event whether the working folder is inside a CodeGraph-indexed repo (`.codegraph/codegraph.db` in the folder or a parent folder). The report then shows calls, shaped results, saved tokens, follow-ups and net tokens for each group:
+
+| Row | Meaning |
+|---|---|
+| `codegraph` | The working folder is in an indexed repo |
+| `no index` | No index found |
+| `unknown` | Events recorded before AAES stored this flag |
+
+Lower savings in the `codegraph` row are expected: the agent used CodeGraph instead. AAES checks each folder once per server run, so after `codegraph init`, restart the server (`aaes serve --stop`) to update the flag.
+
+### 6.4 Edit failures (MET-016)
 
 This section shows the share of Edit/MultiEdit calls that failed, for example because the `old_string` was not found. A failed Edit can mean that the agent guessed text it did not see.
 

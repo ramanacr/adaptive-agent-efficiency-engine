@@ -140,6 +140,8 @@ const KNOWN: &[&str] = &[
     "sl",
     "push-location",
     "pop-location",
+    "codegraph",
+    "tokensave",
 ];
 
 /// Normalised command used for re-run detection: trimmed, whitespace collapsed.
@@ -412,6 +414,10 @@ mod tests {
             "set-location"
         );
         assert_eq!(super::shape("cd /home/me/repo"), "cd");
+        assert_eq!(
+            super::shape("codegraph explore \"Runtime store\""),
+            "codegraph"
+        );
     }
 
     fn f(c: &str) -> String {

@@ -39,6 +39,9 @@ pub struct Event<'a> {
     pub rebound: bool,
     /// Handler time in microseconds (excludes HTTP/process overhead).
     pub dur_us: u64,
+    /// The working folder is inside a CodeGraph-indexed repo (`.codegraph/codegraph.db` at or above it).
+    /// Agents told to prefer CodeGraph there make fewer shapeable calls. `None`: no cwd.
+    pub codegraph: Option<bool>,
 }
 
 pub fn fnv_hex(s: &str) -> String {
@@ -51,7 +54,7 @@ pub fn fnv_hex(s: &str) -> String {
 }
 
 pub fn append(session_dir: &Path, e: &Event) {
-    let rec: Value = json!({
+    let mut rec: Value = json!({
         "ts": std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -67,6 +70,9 @@ pub fn append(session_dir: &Path, e: &Event) {
         "rebound": e.rebound,
         "dur_us": e.dur_us,
     });
+    if let Some(c) = e.codegraph {
+        rec["codegraph"] = json!(c);
+    }
     if paths::create_private_dir(session_dir).is_err() {
         return;
     }

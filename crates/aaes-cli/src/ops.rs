@@ -260,6 +260,8 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
     let mut by: BTreeMap<(String, String), Agg> = BTreeMap::new();
     let (mut sessions, mut rebound_bytes, mut rebound_n) = (0u64, 0u64, 0u64);
     let mut fam: BTreeMap<&'static str, Family> = BTreeMap::new();
+    // Same totals split by "working folder is in a CodeGraph-indexed repo" (old events: unknown).
+    let mut idx: BTreeMap<&'static str, Family> = BTreeMap::new();
     let mut edits = Edits::default();
     let claude_root = aaes_transcripts::discover::default_claude_root();
     if let Ok(rd) = std::fs::read_dir(rt.home.join("sessions")) {
@@ -285,6 +287,16 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                 let kind = v["kind"].as_str().unwrap_or("?").to_owned();
                 let action = v["action"].as_str().unwrap_or("?").to_owned();
                 let raw = v["raw_bytes"].as_u64().unwrap_or(0);
+                let ix = idx.entry(index_of(&v)).or_default();
+                ix.calls += 1;
+                if v["rebound"].as_bool() == Some(true) {
+                    ix.follow_n += 1;
+                    ix.follow_bytes += raw;
+                }
+                if v["action"].as_str() == Some("shaped") {
+                    ix.shaped_n += 1;
+                    ix.saved += raw.saturating_sub(v["delivered_bytes"].as_u64().unwrap_or(0));
+                }
                 let a = by.entry((kind, action)).or_default();
                 a.n += 1;
                 a.raw += raw;
@@ -332,6 +344,10 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                     "ok": f.ok(bpt),
                 }))).collect::<serde_json::Map<String, Value>>(),
                 "edits": edits.json(),
+                "by_index": idx.iter().map(|(k, f)| (k.to_string(), serde_json::json!({
+                    "calls": f.calls, "shaped": f.shaped_n, "saved_bytes": f.saved,
+                    "follow_ups": f.follow_n, "net_tokens_est": f.net_tokens(bpt),
+                }))).collect::<serde_json::Map<String, Value>>(),
                 "bytes_per_token": bpt
             })
         );
@@ -382,8 +398,34 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
             );
         }
     }
+    if idx.len() > 1 || idx.contains_key("codegraph") {
+        println!(
+            "
+{:<10} {:>7} {:>7} {:>12} {:>11} {:>12}  by repo index (agents prefer CodeGraph where indexed)",
+            "repo", "calls", "shaped", "saved tok", "follow-ups", "net tok"
+        );
+        for (k, f) in &idx {
+            println!(
+                "{k:<10} {:>7} {:>7} {:>12} {:>11} {:>12}",
+                f.calls,
+                f.shaped_n,
+                tok(f.saved),
+                f.follow_n,
+                f.net_tokens(bpt)
+            );
+        }
+    }
     edits.print();
     Ok(())
+}
+
+/// Report bucket for the CodeGraph flag of an event.
+fn index_of(v: &Value) -> &'static str {
+    match v["codegraph"].as_bool() {
+        Some(true) => "codegraph",
+        Some(false) => "no index",
+        None => "unknown",
+    }
 }
 
 /// MET-016 Edit failure rate from the Claude Code transcripts of AAES sessions (edits after the
@@ -508,6 +550,8 @@ fn family_of(kind: Option<&str>) -> &'static str {
 /// Per-family totals for MET-015: net saving and follow-up calls per shaped result.
 #[derive(Default)]
 struct Family {
+    /// All hooked calls (used by the repo-index split only).
+    calls: u64,
     shaped_n: u64,
     saved: u64,
     follow_n: u64,

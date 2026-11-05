@@ -185,6 +185,27 @@ pub fn read_key(path: &str, cwd: Option<&str>) -> String {
     format!("read:{}", abs.replace('\\', "/").to_lowercase())
 }
 
+/// Whether `cwd` or one of its ancestors holds a CodeGraph index (`.codegraph/codegraph.db`; how
+/// CodeGraph finds its project). The database file matters: `~/.codegraph` is CodeGraph's global
+/// config folder, not an index. Cached per folder: the server sees the same few folders.
+fn in_codegraph_repo(cwd: &str) -> bool {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(v) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(cwd) {
+        return *v;
+    }
+    let v = Path::new(cwd)
+        .ancestors()
+        .any(|d| d.join(".codegraph").join("codegraph.db").is_file());
+    cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(cwd.to_owned(), v);
+    v
+}
+
 /// Path as shown to the model: relative to cwd when inside it.
 fn display_path<'a>(path: &'a str, cwd: Option<&str>) -> &'a str {
     if let Some(c) = cwd {
@@ -207,6 +228,7 @@ struct Ctx<'a> {
     tool: &'a str,
     session: &'a str,
     t0: Instant,
+    codegraph: Option<bool>,
 }
 
 /// Lower-cased file extension (diagnostics only).
@@ -247,6 +269,7 @@ impl Ctx<'_> {
                 key_hash: key.map(events::fnv_hex),
                 rebound,
                 dur_us,
+                codegraph: self.codegraph,
             },
         );
         let mut rec = json!({
@@ -269,6 +292,9 @@ impl Ctx<'_> {
         }
         if let Some(k) = key {
             rec["key"] = json!(log::short_hash(k));
+        }
+        if let Some(c) = self.codegraph {
+            rec["codegraph"] = json!(c);
         }
         if let (Some(r), Value::Object(d)) = (rec.as_object_mut(), detail) {
             r.extend(d);
@@ -337,6 +363,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
         tool,
         session,
         t0: Instant::now(),
+        codegraph: cwd.map(in_codegraph_repo),
     };
 
     match tool {
@@ -906,6 +933,34 @@ mod tests {
             }
         }
         assert!(scanned > 0);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn events_flag_codegraph_indexed_repos() {
+        let (rt, home) = rt();
+        let repo = home.join("repo");
+        std::fs::create_dir_all(repo.join(".codegraph")).unwrap();
+        std::fs::write(repo.join(".codegraph").join("codegraph.db"), b"").unwrap();
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        // A `.codegraph` folder without a database (like `~/.codegraph`) is not an index.
+        let plain = home.join("plain");
+        std::fs::create_dir_all(plain.join(".codegraph")).unwrap();
+        for cwd in [repo.join("src"), plain] {
+            let mut ev = read_event(
+                "cg", None, "a.ts", "x
+", false,
+            );
+            ev["cwd"] = json!(cwd.to_string_lossy());
+            handle(&rt, &ev);
+        }
+        let text =
+            std::fs::read_to_string(paths::session_dir(&home, "cg").join("events.jsonl")).unwrap();
+        let flags: Vec<Value> = text
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap()["codegraph"].clone())
+            .collect();
+        assert_eq!(flags, vec![json!(true), json!(false)]);
         let _ = std::fs::remove_dir_all(&home);
     }
 
