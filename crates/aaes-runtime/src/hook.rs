@@ -840,6 +840,74 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// SEC-010/SEC-013 canary: a secret in tool output, a search pattern or a command never reaches
+    /// the log, the event log or any other file in the home (artifacts are encrypted), nor the
+    /// text AAES delivers in place of an omitted region.
+    #[test]
+    fn canary_secret_never_in_telemetry_or_footers() {
+        const CANARY: &str = "AKIA_CANARY_51d0c3e8";
+        let (rt, home) = rt();
+        let mut src = big_ts();
+        src.push_str(&format!("const awsKey = \"{CANARY}\";\n"));
+        let read = handle(
+            &rt,
+            &read_event("sc", None, "C:\\repo\\src\\big.ts", &src, false),
+        );
+        let delivered = read["hookSpecificOutput"]["updatedToolOutput"]["file"]["content"]
+            .as_str()
+            .expect("read shaped");
+        assert!(!delivered.contains(CANARY), "omitted region leaked");
+
+        let mut content = String::new();
+        for l in 0..200 {
+            content.push_str(&format!(
+                "C:\\repo\\src\\A.cs:{}: var k = \"{CANARY}\";\n",
+                l + 1
+            ));
+        }
+        let search = handle(
+            &rt,
+            &json!({
+                "hook_event_name": "PostToolUse", "session_id": "sc", "cwd": "C:\\repo",
+                "tool_name": "Grep", "tool_input": {"pattern": CANARY, "output_mode": "content"},
+                "tool_response": {"mode": "content", "content": content, "numLines": 200, "filenames": [], "numFiles": 1}
+            }),
+        );
+        assert!(search["hookSpecificOutput"].is_object(), "search shaped");
+        handle(
+            &rt,
+            &json!({
+                "hook_event_name": "PostToolUse", "session_id": "sc", "cwd": "/repo",
+                "tool_name": "Bash", "tool_input": {"command": format!("deploy-tool --token {CANARY}")},
+                "tool_response": {"stdout": "ok", "stderr": "", "interrupted": false, "isImage": false}
+            }),
+        );
+
+        let mut roots = vec![home.clone()];
+        roots.extend(log::dir());
+        let mut scanned = 0;
+        while let Some(p) = roots.pop() {
+            let Ok(rd) = std::fs::read_dir(&p) else {
+                continue;
+            };
+            for e in rd.flatten() {
+                let path = e.path();
+                if path.is_dir() {
+                    roots.push(path);
+                } else if let Ok(bytes) = std::fs::read(&path) {
+                    scanned += 1;
+                    assert!(
+                        !bytes.windows(CANARY.len()).any(|w| w == CANARY.as_bytes()),
+                        "canary in {}",
+                        path.display()
+                    );
+                }
+            }
+        }
+        assert!(scanned > 0);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     #[test]
     fn grep_content_grouped_and_capped_with_retrievable_raw() {
         let (rt, home) = rt();

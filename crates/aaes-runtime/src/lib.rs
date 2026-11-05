@@ -10,6 +10,7 @@
 //! `$XDG_STATE_HOME/aaes` or `~/.local/state/aaes` elsewhere).
 
 pub mod config;
+mod crypto;
 pub mod events;
 pub mod hook;
 pub mod log;

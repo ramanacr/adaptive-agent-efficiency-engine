@@ -60,7 +60,9 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - ✅ Diagnostic log + `aaes logs` (decisions with timings, auth/parse failures, schema-drift warnings, caught panics fail open); once-per-session notice via `SessionStart.additionalContext` (FUN-016)
 - ▶ Dogfood trial on the maintainer's machine started 2026-11-04 (RTK and jCodeMunch temporarily disabled for an isolated measurement; CodeGraph and tokensave kept)
 - ✅ Contract test with Claude Code 2.1.233: 5 scenarios pass. +27 ms p50 per hooked call; ≈ 70% saving on a 13k-token read; rebound 96 bytes on read-then-edit.
-- ☐ SEC-012 encryption at rest · SEC-013 redaction (stored search outputs are plaintext in the user-private data folder until then)
+- ✅ SEC-012 encryption at rest: one 256-bit key per data folder (`artifact-key`), wrapped by DPAPI CurrentUser on Windows; 0600 file fallback on macOS/Linux until Keychain/libsecret. Artifacts sealed with ChaCha20-Poly1305, handle as associated data. Lost or foreign key: new key, older handles read as expired. Pre-encryption plaintext artifacts deleted by the sweep.
+- ✅ SEC-013 for M1 (no FTS/vector index yet): canary test proves a secret in tool output, a search pattern or a command never reaches the log, the event log, any file in the data folder, or the text that replaces an omitted region. Redaction before indexing lands with the M3 index.
+- ☐ SEC-012 macOS Keychain / Linux libsecret key wrapping
 - ☐ MET-016 Edit-failure events (`PostToolUseFailure`) · scripted, version-pinned contract test · release pipeline (FUN-023)
 
 **Exit**: read/search fidelity goldens pass (exact retrieval of every omitted range; exact match totals); no tool regressions; delivered ≤ raw for every result; hook latency measured; two concurrent sessions isolated; measurable direct reduction on shaped families.

@@ -6,7 +6,7 @@ Thanks for helping make coding agents cheaper and sharper.
 1. **No private data in this repository, ever.** That means no proprietary source, no real agent transcripts, no raw tool output from non-public repos, and no secrets. Fixtures must be **synthetic** or derived from **public OSS repositories** with their license noted. Keep private benchmark material in the git-ignored `bench-private/` folder. CI runs a secret scan on every push.
 2. **Fidelity over compression.** A change that drops an exit code, error, path or line number from a qualifying golden fixture is rejected, however many tokens it saves.
 3. **The hot path stays fast.** Hook/run binaries are started once per agent tool call. Avoid heavy start-up work, large dependency trees and async runtimes in hot-path crates. Report cold-start numbers for changes that touch them.
-4. `unsafe` is denied workspace-wide. The only exception is a minimal, commented OS call that std can't express (currently one: clearing handle inheritance on Windows in `aaes-cli/src/ops.rs`), with a `// SAFETY:` justification.
+4. `unsafe` is denied workspace-wide. The only exception is a minimal, commented OS call that std can't express (currently two, both Windows: clearing handle inheritance in `aaes-cli/src/ops.rs`, and DPAPI key wrapping in `aaes-runtime/src/crypto.rs`), with a `// SAFETY:` justification.
 5. Design changes go through the docs in `Implementation Docs/`. Changes to an ADR or requirement ID need a change-log entry.
 
 ## Development

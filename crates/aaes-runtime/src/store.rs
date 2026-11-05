@@ -1,12 +1,12 @@
 //! Session-scoped raw artifacts behind unguessable handles (FUN-006, ADR-005) and retention (SEC-014).
 //!
 //! Standard tier (ADR-013): the 128-bit random handle is the capability. Files live in the
-//! user-private AAES home. Encryption at rest (SEC-012) is a planned M1 follow-up.
+//! user-private AAES home, encrypted at rest (SEC-012, [`crypto`]).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::paths;
+use crate::{crypto, paths};
 
 const ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
 
@@ -39,15 +39,15 @@ fn index_path(home: &Path, handle: &str) -> PathBuf {
     home.join("handles").join(handle)
 }
 
-/// Persist raw output for a session under `handle`.
+/// Persist raw output for a session under `handle`, encrypted.
 pub fn save(home: &Path, session_id: &str, handle: &str, raw: &str) -> std::io::Result<()> {
     let dir = paths::session_dir(home, session_id).join("artifacts");
-    let file = dir.join(format!("{handle}.txt"));
-    paths::write_private(&file, raw.as_bytes())?;
+    let file = dir.join(format!("{handle}.bin"));
+    paths::write_private(&file, &crypto::seal(home, handle, raw.as_bytes())?)?;
     paths::write_private(&index_path(home, handle), file.to_string_lossy().as_bytes())
 }
 
-/// Load raw output by handle. `None` if unknown, invalid or expired.
+/// Load raw output by handle. `None` if unknown, invalid, expired or unreadable (key lost).
 pub fn load(home: &Path, handle: &str) -> Option<String> {
     if !valid_handle(handle) {
         return None;
@@ -58,17 +58,26 @@ pub fn load(home: &Path, handle: &str) -> Option<String> {
     if !target.starts_with(home.join("sessions")) {
         return None;
     }
-    std::fs::read_to_string(target).ok()
+    let plain = crypto::open(home, handle, &std::fs::read(target).ok()?)?;
+    String::from_utf8(plain).ok()
 }
 
-/// Delete sessions whose last activity is older than `retention`, and dangling handle entries.
-/// Returns the number of sessions removed.
+/// Delete sessions whose last activity is older than `retention`, plaintext `.txt` artifacts
+/// written before SEC-012 (unreadable now anyway), and dangling handle entries. Returns the
+/// number of sessions removed.
 pub fn sweep(home: &Path, retention: Duration) -> usize {
     let now = SystemTime::now();
     let mut removed = 0;
     if let Ok(rd) = std::fs::read_dir(home.join("sessions")) {
         for e in rd.flatten() {
             let p = e.path();
+            if let Ok(arts) = std::fs::read_dir(p.join("artifacts")) {
+                for a in arts.flatten() {
+                    if a.path().extension().is_some_and(|x| x == "txt") {
+                        let _ = std::fs::remove_file(a.path());
+                    }
+                }
+            }
             let last = std::fs::metadata(p.join("state.json"))
                 .or_else(|_| std::fs::metadata(&p))
                 .and_then(|m| m.modified())
@@ -115,6 +124,36 @@ mod tests {
         assert_eq!(load(&home, &new_handle()), None);
         assert_eq!(sweep(&home, Duration::from_secs(3600)), 0);
         assert_eq!(sweep(&home, Duration::ZERO), 1);
+        assert_eq!(load(&home, &h), None);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn artifacts_are_encrypted_and_lost_key_expires_them() {
+        let home = std::env::temp_dir().join(format!("aaes-store-enc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let h = new_handle();
+        let canary = "AKIA_CANARY_7f3e9b1c secret=hunter2";
+        save(&home, "sess-1", &h, canary).unwrap();
+        let file = std::fs::read_to_string(index_path(&home, &h)).unwrap();
+        let bytes = std::fs::read(file.trim()).unwrap();
+        assert!(
+            !bytes.windows(7).any(|w| w == b"hunter2"),
+            "no plaintext on disk"
+        );
+        assert_eq!(load(&home, &h).as_deref(), Some(canary));
+        // A pre-SEC-012 plaintext artifact is removed by the sweep; the sealed one stays.
+        let legacy = paths::session_dir(&home, "sess-1")
+            .join("artifacts")
+            .join("h_old.txt");
+        std::fs::write(&legacy, canary).unwrap();
+        assert_eq!(sweep(&home, Duration::from_secs(3600)), 0);
+        assert!(!legacy.exists());
+        assert_eq!(load(&home, &h).as_deref(), Some(canary));
+        // Key lost: a fresh process finds no key, creates a new one, and the old artifact reads
+        // as expired instead of failing.
+        std::fs::remove_file(home.join("artifact-key")).unwrap();
+        crypto::forget(&home);
         assert_eq!(load(&home, &h), None);
         let _ = std::fs::remove_dir_all(&home);
     }

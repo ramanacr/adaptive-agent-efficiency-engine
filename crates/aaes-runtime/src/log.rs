@@ -64,6 +64,12 @@ pub fn init(home: &Path, level: Level) {
     });
 }
 
+/// Log folder of this process's sink (tests scan it for leaked content).
+#[cfg(test)]
+pub(crate) fn dir() -> Option<PathBuf> {
+    SINK.get().map(|s| s.dir.clone())
+}
+
 pub fn enabled(level: Level) -> bool {
     SINK.get().is_some_and(|s| level <= s.level)
 }
