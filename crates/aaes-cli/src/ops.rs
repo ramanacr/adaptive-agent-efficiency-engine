@@ -408,6 +408,15 @@ impl Edits {
     ) {
         use aaes_transcripts::edits;
         for f in edits::session_files(claude_root, session_id) {
+            // A file last written before AAES saw the session holds no edits we count.
+            let mtime_ms = std::fs::metadata(&f)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64);
+            if mtime_ms.is_some_and(|m| m < since_ms) {
+                continue;
+            }
             let Ok(file) = std::fs::File::open(&f) else {
                 continue;
             };

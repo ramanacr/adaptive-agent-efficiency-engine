@@ -63,6 +63,15 @@ pub fn edit_outcomes<R: BufRead>(reader: R) -> Vec<EditOutcome> {
     let mut pending: HashMap<String, EditOutcome> = HashMap::new();
     let mut out = Vec::new();
     for line in reader.lines().map_while(Result::ok) {
+        // Transcripts run to hundreds of MB: parse only lines that can hold an Edit call or the
+        // result of a pending one (Claude Code writes compact JSON).
+        let call = line.contains(r#""name":"Edit""#) || line.contains(r#""name":"MultiEdit""#);
+        let result = !pending.is_empty()
+            && line.contains(r#""tool_result""#)
+            && pending.keys().any(|id| line.contains(id.as_str()));
+        if !call && !result {
+            continue;
+        }
         let Ok(v) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
