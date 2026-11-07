@@ -17,6 +17,12 @@ cargo test --workspace
 ```
 CI runs the same on Linux, Windows and macOS with warnings treated as errors.
 
+Changes to hook handling or the hook response format also need the contract test against real Claude Code. It needs a Claude Code login, so it is not in CI:
+```bash
+pwsh scripts/contract-test.ps1 -Aaes target/release/aaes -Auth subscription
+```
+See [docs/spikes/M1-contract-test.md](docs/spikes/M1-contract-test.md).
+
 ## Commit and PR conventions
 - Small, focused PRs, with requirement/ADR IDs referenced where relevant (e.g. `FUN-022`).
 - New parsers need golden fixtures for success, failure and truncated output, under both Bash and PowerShell where the command exists on Windows.

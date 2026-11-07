@@ -32,8 +32,24 @@
 3. **`aaes init --port` not carried into the `SessionStart` command**, so the server started on the default port while hooks targeted another. AAES failed open as designed; nothing was shaped. **Fix:** the ensure command now includes `--port`.
 4. **`aaes serve --stop` didn't stop the server.** The `Connection: close` check ran before the exit. **Fix:** exit right after responding to an authenticated shutdown.
 
+## Scripted contract test (2026-11-07)
+
+`scripts/contract-test.ps1` (PowerShell 7, any OS) runs these scenarios against the installed `claude`, plus **C6**: a shell `grep -rn` through the Bash tool. It creates the fixtures, an isolated `AAES_HOME` with read shaping turned on, a separate settings file and server port, and then checks:
+
+- **Hard checks (exit 1 on failure):** AAES recorded the shaping decision (main context, sub-agent, Grep, Bash), the shaped text reached the model (outline in `hook_additional_context`, handle in the Grep result), exact facts survived (first line, 240 matches / 8 files, the edit landed on line 1513), small reads passed through, and AAES's log has no errors or schema-drift warnings.
+- **Soft checks (warnings):** answers that depend on the model's instruction following (C1 range, C2 `SUCCESS`, C4 range).
+
+The Claude Code version is pinned in `tests/contract/claude-code.version`. A different version gives a warning, and `-Strict` makes it a failure. `-UpdatePin` records a new version after a run with no hard failures.
+
+```bash
+pwsh scripts/contract-test.ps1 -Aaes target/release/aaes -Auth subscription   # your normal login, user settings/plugins/MCP left out
+pwsh scripts/contract-test.ps1 -Aaes target/release/aaes                       # isolated CLAUDE_CONFIG_DIR + API key ($AAES_ANTHROPIC_API_KEY)
+```
+
+First run: Claude Code 2.1.233, `haiku`, subscription auth: **29/29 checks pass, 0 warnings**, about USD 0.35 as reported by Claude Code. It is not in CI, because it needs a Claude Code login. Run it after each Claude Code update and before a release.
+
 ## Follow-ups
-- Automate this contract test as a scripted, version-pinned check (FUN-014: a shape mismatch is silently ignored by Claude Code).
+- ~~Automate this contract test as a scripted, version-pinned check (FUN-014).~~ Done 2026-11-07, see above.
 - ~~MET-016 Edit-failure instrumentation (`PostToolUseFailure` for Edit/MultiEdit).~~ Done from transcripts instead (2026-11-05): with Claude Code 2.1.233, a failed Edit (`String to replace not found`) fires no `PostToolUseFailure` hook. Bad `old_string` errors come from input validation, before the tool runs. A successful Edit does fire `PostToolUse`. `aaes report` reads the session transcripts.
 - ~~SEC-012 encryption at rest and SEC-013 redaction for stored search outputs.~~ Done 2026-11-05.
 - First-start latency: `serve --ensure` waited ~2 s for the first health check on a fresh binary (endpoint scanning). Consider not waiting, since hooks fail open until the server is up.
