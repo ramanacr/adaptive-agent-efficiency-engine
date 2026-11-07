@@ -166,6 +166,8 @@ The raw content is kept (ADR-005), so nothing becomes unreachable. **Ask twice, 
 - *Edit failures*: the agent guesses `old_string` without exact text. Measured by MET-016; the outline footer tells it to read the exact range before editing.
 - Claude Code's own "file was read" bookkeeping for Edit is unaffected, because the Read call itself still executes. Verify in the M1 spike.
 
+**Trial result (2026-11-07):** the rebound risk happened. In the dogfood trial, agents (mostly sub-agents) read the rest of a shaped file within seconds, so read shaping lost tokens overall and failed MET-015. Edit failures did not rise (MET-016). The mechanism stays in the code, but it is **off by default for M1** (`read_shaping: false` in `config.json`). A later policy may turn it on only where agents follow the outline, for example by context or file type.
+
 ## ADR-023 — Search-result shaping (ACCEPT v0.4)
 **Decision:** large search outputs (Grep tool content mode, `grep`/`rg`/`git grep`/`Select-String`) are regrouped by file:
 - each path printed once;

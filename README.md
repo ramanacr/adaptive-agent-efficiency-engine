@@ -6,7 +6,7 @@
 
 It runs the real tool unchanged, keeps the full output in an encrypted, session-private store, and gives the agent a compact, validated rendering in the tool's native format, plus a handle (`aaes show <handle>`) for retrieving the rest on demand. It is deterministic-first, written in Rust for minimal per-call overhead, and falls back to the raw output whenever unsure. It reports savings for both **subscription** (usage headroom) and **API** (dollars) sessions.
 
-> **Status:** design v0.5 · M-1 done (GO) · M1 preview working end-to-end with Claude Code: read and search shaping, encrypted output store, savings and Edit-failure reports ([contract test](docs/spikes/M1-contract-test.md)). In dogfood trial. `aaes mine` measures where tool-output tokens go in your existing sessions. See the [roadmap](Implementation%20Docs/04_IMPLEMENTATION_ROADMAP.md).
+> **Status:** design v0.5 · M-1 done (GO) · M1 preview working end-to-end with Claude Code: search shaping (read shaping built, off by default after the trial), encrypted output store, savings and Edit-failure reports ([contract test](docs/spikes/M1-contract-test.md)). In dogfood trial. `aaes mine` measures where tool-output tokens go in your existing sessions. See the [roadmap](Implementation%20Docs/04_IMPLEMENTATION_ROADMAP.md).
 >
 > **New here?** Read the [user guide](docs/USER_GUIDE.md): install, what changes for the agent, `aaes show`, how to read `aaes report`, data and privacy, configuration, troubleshooting.
 
@@ -32,12 +32,12 @@ aaes disable | aaes enable       # kill switch
 aaes uninstall                   # removes only AAES hooks and stops the server
 ```
 Optional `config.json` in the data folder (`%USERPROFILE%\.aaes` on Windows, `~/.local/state/aaes` elsewhere, or `$AAES_HOME`):
-`{"log_level": "debug", "session_guidance": true, "read_threshold_tokens": 2000, "search_max_lines_per_file": 20, "search_min_parsed": 0.7, "retention_hours": 24}`.
+`{"log_level": "debug", "session_guidance": true, "read_shaping": false, "read_threshold_tokens": 2000, "search_max_lines_per_file": 20, "search_min_parsed": 0.7, "retention_hours": 24}`.
 On Windows the data folder is deliberately outside `AppData`: apps installed as MSIX packages (such as the Claude desktop app) have their `AppData` writes redirected to a private copy, which would otherwise split data, logs and the hook token between a server started from the app and a CLI run from a terminal. Put `aaes` itself somewhere on your `PATH` (`aaes init` warns if it isn't).
 Each session starts with a short notice (~150 tokens) telling the agent how shaped output works; set `session_guidance` to `false` to turn it off.
 What changes for the agent:
-- **Large whole-file reads** (Read tool, `cat`, `Get-Content`) return the first 40 lines verbatim plus a structural outline with exact line ranges. Ranged reads pass through, and reading the same file again returns it in full.
 - **Large search results** (Grep tool, `grep`/`rg`/`git grep`/`Select-String`) are grouped by file with exact totals; capped lines stay retrievable with `aaes show <handle>`.
+- **Large whole-file reads** pass through by default. Read shaping (first 40 lines plus an outline with exact line ranges) is off, because in the dogfood trial agents read the rest of the file anyway; set `"read_shaping": true` to try it.
 - Everything else passes through unchanged, and any error fails open (the original output is used).
 
 Stored outputs are encrypted at rest and deleted 24 h after the session's last activity. Full details: [user guide](docs/USER_GUIDE.md).

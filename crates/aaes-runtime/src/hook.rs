@@ -48,12 +48,17 @@ pub fn handle_safe(rt: &Runtime, input: &Value) -> Value {
 }
 
 /// Once-per-session notice so the agent knows how shaped output works (FUN-016). ~100 tokens.
-pub fn session_guidance() -> String {
+pub fn session_guidance(read_shaping: bool) -> String {
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "aaes".into());
+    let reads = if read_shaping {
+        " Large whole-file reads show lines 1-40 plus an outline with line ranges: use Read offset/limit for exact text, or read the same file again to get all of it."
+    } else {
+        ""
+    };
     format!(
-        "[aaes] Token reducer active (aaes = \"{exe}\"). Large whole-file reads show lines 1-40 plus an outline with line ranges: use Read offset/limit for exact text, or read the same file again to get all of it. Large search results are grouped by file with exact totals; capped lines: `aaes show <handle>`. If output looks wrong: `aaes logs --errors`."
+        "[aaes] Token reducer active (aaes = \"{exe}\").{reads} Large search results are grouped by file with exact totals; capped lines: `aaes show <handle>`. If output looks wrong: `aaes logs --errors`."
     )
 }
 
@@ -120,7 +125,7 @@ pub fn handle(rt: &Runtime, input: &Value) -> Value {
                 json!({
                     "hookSpecificOutput": {
                         "hookEventName": "SessionStart",
-                        "additionalContext": session_guidance(),
+                        "additionalContext": session_guidance(rt.cfg.read_shaping),
                     }
                 })
             } else {
@@ -422,6 +427,19 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 );
                 return json!({});
             }
+            if !rt.cfg.read_shaping {
+                c.log(
+                    "read",
+                    Action::PassThrough,
+                    "read_shaping_off",
+                    content.len(),
+                    content.len(),
+                    Some(&key),
+                    false,
+                    json!({ "ext": ext(path), "total_lines": total_lines, "est_tokens": cfg.est_tokens(content.len()) }),
+                );
+                return json!({});
+            }
             if c.bump(&key) >= 1 {
                 let info = c.shaped_info(&key);
                 c.log(
@@ -538,6 +556,19 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
             if let Some(target) = shape::shell_read_target(cmd) {
                 let key = read_key(&target, cwd);
                 let base = json!({ "cmd": cmd_shape, "ext": ext(&target) });
+                if !rt.cfg.read_shaping {
+                    c.log(
+                        "shell_read",
+                        Action::PassThrough,
+                        "read_shaping_off",
+                        stdout.len(),
+                        stdout.len(),
+                        Some(&key),
+                        false,
+                        base,
+                    );
+                    return json!({});
+                }
                 if c.bump(&key) >= 1 {
                     let info = c.shaped_info(&key);
                     c.log(
@@ -714,7 +745,10 @@ mod tests {
             std::process::id(),
             store::new_handle()
         ));
-        (Runtime::new(home.clone()), home)
+        let mut r = Runtime::new(home.clone());
+        // Most tests cover the read-shaping path; `read_shaping_is_off_by_default` covers the default.
+        r.cfg.read_shaping = true;
+        (r, home)
     }
 
     fn big_ts() -> String {
@@ -756,6 +790,45 @@ mod tests {
             v["agent_type"] = json!("general-purpose");
         }
         v
+    }
+
+    #[test]
+    fn read_shaping_is_off_by_default() {
+        let home = std::env::temp_dir().join(format!(
+            "aaes-hook-{}-{}",
+            std::process::id(),
+            store::new_handle()
+        ));
+        let rt = Runtime::new(home.clone());
+        assert!(!rt.cfg.read_shaping);
+        let src = big_ts();
+        // Read tool and shell read both pass through; search shaping is unaffected.
+        assert_eq!(
+            handle(
+                &rt,
+                &read_event("s1", None, "C:\\repo\\src\\big.ts", &src, false)
+            ),
+            json!({})
+        );
+        let shell = json!({
+            "hook_event_name": "PostToolUse", "session_id": "s1", "cwd": "C:\\repo",
+            "tool_name": "Bash", "tool_input": { "command": "cat src/big.ts" },
+            "tool_response": { "stdout": src, "stderr": "", "interrupted": false }
+        });
+        assert_eq!(handle(&rt, &shell), json!({}));
+        assert!(!session_guidance(false).contains("whole-file"));
+        assert!(session_guidance(true).contains("whole-file"));
+
+        // config.json can turn it back on.
+        std::fs::write(home.join("config.json"), r#"{"read_shaping": true}"#).unwrap();
+        let rt2 = Runtime::new(home.clone());
+        assert!(rt2.cfg.read_shaping);
+        let out = handle(
+            &rt2,
+            &read_event("s2", None, "C:\\repo\\src\\big.ts", &src, false),
+        );
+        assert!(out["hookSpecificOutput"]["updatedToolOutput"].is_object());
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]

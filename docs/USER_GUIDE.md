@@ -40,9 +40,11 @@ Select a mode with `aaes init --mode http|command`. Use `aaes init --dry-run` to
 
 ## 3. What changes for the agent
 
-### 3.1 Large whole-file reads
+### 3.1 Large whole-file reads (off by default)
 
-This applies to the Read tool and to whole-file shell reads (`cat`, `type`, `Get-Content`).
+Read shaping is **off by default**. In the M1 dogfood trial, agents (mostly sub-agents) read the rest of a shaped file within seconds, so read shaping cost more tokens than it saved. Whole-file reads pass through unchanged. `aaes report` still counts them, with the reason `read_shaping_off`.
+
+To try it, set `"read_shaping": true` in `config.json` (section 9). Then it applies to the Read tool and to whole-file shell reads (`cat`, `type`, `Get-Content`).
 
 If a file is above `read_threshold_tokens`, the agent gets:
 
@@ -215,7 +217,8 @@ Put an optional `config.json` in the data folder. Missing keys keep their defaul
 
 | Key | Default | Meaning |
 |---|---|---|
-| `read_threshold_tokens` | 2000 | Shape whole-file reads above this size |
+| `read_shaping` | false | Shape large whole-file reads (section 3.1) |
+| `read_threshold_tokens` | 2000 | Shape whole-file reads above this size (when `read_shaping` is on) |
 | `head_lines` | 40 | Verbatim lines at the start of a shaped read |
 | `search_threshold_tokens` | 1500 | Shape search results above this size |
 | `search_max_lines_per_file` | 20 | Lines shown per file in a shaped search |

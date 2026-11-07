@@ -17,6 +17,9 @@ pub struct Config {
     pub session_guidance: bool,
     /// A read of a shaped file counts as its follow-up (MET-015) only within this window.
     pub followup_window_secs: u64,
+    /// Shape large whole-file reads (Read tool and shell `cat`-style reads). Off by default:
+    /// the M1 dogfood trial measured a net token loss, because agents read the rest of the file.
+    pub read_shaping: bool,
 }
 
 impl Default for Config {
@@ -28,6 +31,7 @@ impl Default for Config {
             log_level: crate::log::Level::Info,
             session_guidance: true,
             followup_window_secs: 300,
+            read_shaping: false,
         }
     }
 }
@@ -70,6 +74,9 @@ impl Config {
         }
         if let Some(x) = u("followup_window_secs") {
             c.followup_window_secs = x;
+        }
+        if let Some(b) = v["read_shaping"].as_bool() {
+            c.read_shaping = b;
         }
         if let Some(b) = v["session_guidance"].as_bool() {
             c.session_guidance = b;
