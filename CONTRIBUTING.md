@@ -23,6 +23,16 @@ pwsh scripts/contract-test.ps1 -Aaes target/release/aaes -Auth subscription
 ```
 See [docs/spikes/M1-contract-test.md](docs/spikes/M1-contract-test.md).
 
+CI also runs `cargo deny check` (licenses, advisories, sources; policy in `deny.toml`).
+
+## Releases
+1. Set `version` in the root `Cargo.toml` (and the matching `version` of the internal path dependencies), commit, and push.
+2. Run the contract test (above) against the release build.
+3. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`. The tag must equal the workspace version.
+4. The `release` workflow builds all platforms and creates a **draft** GitHub Release with archives, `SHA256SUMS`, an SPDX SBOM and Sigstore build provenance. Check it, then publish it.
+
+`workflow_dispatch` on the `release` workflow runs the same build and packaging without a release (the files are a workflow artifact).
+
 ## Commit and PR conventions
 - Small, focused PRs, with requirement/ADR IDs referenced where relevant (e.g. `FUN-022`).
 - New parsers need golden fixtures for success, failure and truncated output, under both Bash and PowerShell where the command exists on Windows.

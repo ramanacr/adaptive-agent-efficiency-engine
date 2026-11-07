@@ -25,3 +25,21 @@ windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_
 
 [lints]
 workspace = true
+
+# `cargo binstall aaes-cli` downloads the release archive instead of compiling (FUN-023).
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/aaes-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/aaes-v{ version }-universal-apple-darwin.tar.gz"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/aaes-v{ version }-universal-apple-darwin.tar.gz"

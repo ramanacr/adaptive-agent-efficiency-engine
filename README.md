@@ -21,6 +21,7 @@ aaes mine --anonymize                   # hash unknown program names before shar
 The report contains aggregate numbers and command-family names only, never transcript content. It ends with a go/no-go verdict: tool results ≥ 20% of cost-weighted input means GO.
 
 ## Try it: M1 preview (Claude Code)
+Install a release binary with `scripts/install.ps1` (Windows) or `scripts/install.sh` (Linux/macOS), or build it ([user guide, section 2](docs/USER_GUIDE.md#2-install)):
 ```bash
 cargo build --release            # binary: target/release/aaes(.exe)
 aaes init                        # adds hooks to ~/.claude/settings.json (backup kept);

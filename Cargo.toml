@@ -11,9 +11,9 @@ repository = "https://github.com/ramanacr/adaptive-agent-efficiency-engine"
 authors = ["Ramana Reddy Chamakura"]
 
 [workspace.dependencies]
-aaes-core = { path = "crates/aaes-core" }
-aaes-runtime = { path = "crates/aaes-runtime" }
-aaes-transcripts = { path = "crates/aaes-transcripts" }
+aaes-core = { path = "crates/aaes-core", version = "0.1.0" }
+aaes-runtime = { path = "crates/aaes-runtime", version = "0.1.0" }
+aaes-transcripts = { path = "crates/aaes-transcripts", version = "0.1.0" }
 getrandom = "0.3"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

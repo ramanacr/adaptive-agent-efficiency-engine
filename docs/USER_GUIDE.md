@@ -13,19 +13,30 @@ The real tool always runs unchanged. If AAES fails or is not running, the agent 
 
 ## 2. Install
 
-AAES is built from source in the M1 preview. You need Rust 1.85 or later.
+You do not need admin rights.
 
-1. Build the binary:
-   ```bash
-   cargo build --release            # binary: target/release/aaes(.exe)
-   ```
-2. Copy `aaes` (or `aaes.exe`) to a folder on your `PATH`. `aaes init` warns if the folder is not on `PATH` and prints the command to add it.
+1. Get the binary. Use one of these ways:
+   - **Install script (Windows):** downloads the latest release for your CPU, checks its SHA-256 checksum, installs `aaes.exe` into `%LOCALAPPDATA%\Programs\aaes` and adds that folder to your user `PATH`. It also stops a running `aaes serve`, so it works for updates too.
+     ```powershell
+     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/ramanacr/adaptive-agent-efficiency-engine/main/scripts/install.ps1)))
+     ```
+   - **Install script (Linux, macOS):** installs into `~/.local/bin` (change it with `AAES_INSTALL_DIR`).
+     ```bash
+     curl -fsSL https://raw.githubusercontent.com/ramanacr/adaptive-agent-efficiency-engine/main/scripts/install.sh | sh
+     ```
+   - **Release archive:** download the file for your platform from [GitHub Releases](https://github.com/ramanacr/adaptive-agent-efficiency-engine/releases), check it against `SHA256SUMS`, and put `aaes` (or `aaes.exe`) in a folder on your `PATH`.
+   - **`cargo binstall aaes-cli`**, or **build from source** with Rust 1.85 or later: `cargo build --release` (binary: `target/release/aaes(.exe)`).
+
+   `aaes init` warns if the binary's folder is not on `PATH` and prints the command to add it.
+2. Optional: verify the build provenance. Each release archive has a Sigstore attestation made by the release workflow. With the GitHub CLI: `gh attestation verify <archive> --repo ramanacr/adaptive-agent-efficiency-engine`. The install scripts run this check when `gh` is installed and signed in.
 3. Install the hooks:
    ```bash
    aaes init
    ```
    `aaes init` backs up `~/.claude/settings.json` first (`settings.json.aaes-backup-<time>`) and adds only AAES entries. Your own hooks and settings stay unchanged.
 4. Start a new Claude Code session. Hooks load at session start.
+
+**Release platforms.** Windows x64 and arm64, Linux x64 and arm64 (static, musl), macOS universal (Intel and Apple silicon). The binaries are not yet code-signed (no Authenticode signature on Windows, no notarization on macOS). On macOS, a downloaded binary may need `xattr -d com.apple.quarantine aaes` before it runs. The install script uses `curl`, which does not set that flag.
 
 **Hook modes.**
 
