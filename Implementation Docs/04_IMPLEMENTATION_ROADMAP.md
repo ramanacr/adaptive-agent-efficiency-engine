@@ -67,6 +67,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - ☐ SEC-012 macOS Keychain / Linux libsecret key wrapping
 - ✅ MET-016 Edit failure rate in `aaes report`, from the Claude Code transcripts of AAES sessions: Edit/MultiEdit calls made while AAES was active, failure class, and a split by "file shown shaped earlier in the session" vs other files. Not from hooks: Claude Code 2.1.233 fires no `PostToolUseFailure` for `old_string` validation errors, which are nearly all Edit failures.
 - ✅ Repo-index split: each event records whether the working folder is in a CodeGraph-indexed repo (`.codegraph/codegraph.db`), and `aaes report` splits calls and savings by it. Agents told to prefer CodeGraph make fewer shapeable calls there, so trial savings are read per group.
+- ✅ Trial fixes (2026-11-07): single-file search output (`12:text`, no paths) is shaped as one group, labelled with the Grep tool's path. A follow-up (MET-015) counts only within `followup_window_secs` (default 300) after the shaped read; later reads were inflating the follow-up count.
 - ☐ Scripted, version-pinned contract test · release pipeline (FUN-023)
 
 **Exit**: read/search fidelity goldens pass (exact retrieval of every omitted range; exact match totals); no tool regressions; delivered ≤ raw for every result; hook latency measured; two concurrent sessions isolated; measurable direct reduction on shaped families.

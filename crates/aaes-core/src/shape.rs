@@ -280,6 +280,26 @@ fn parse_line(line: &str) -> Option<Parsed<'_>> {
     None
 }
 
+/// `12:text` (match) or `12-text` (context): single-file `grep -n` output, or the Grep tool on
+/// one file, which prints no path. `path` labels the group.
+fn parse_lineno<'a>(line: &'a str, path: &'a str) -> Option<Parsed<'a>> {
+    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+    let sep = *line.as_bytes().get(digits)?;
+    if digits == 0 || !(sep == b':' || sep == b'-') {
+        return None;
+    }
+    Some(Parsed {
+        path,
+        rest: line,
+        is_match: sep == b':',
+    })
+}
+
+/// `path` relative to `cwd` when inside it (as search output shows paths).
+pub fn display_rel<'a>(path: &'a str, cwd: Option<&str>) -> &'a str {
+    relativize(path, cwd)
+}
+
 fn relativize<'a>(path: &'a str, cwd: Option<&str>) -> &'a str {
     let Some(cwd) = cwd else { return path };
     let norm = |s: &str| s.replace('\\', "/").to_ascii_lowercase();
@@ -293,11 +313,13 @@ fn relativize<'a>(path: &'a str, cwd: Option<&str>) -> &'a str {
 
 /// Shape grep/rg-style output, or `None` to pass through. `handle` is mentioned in the footer
 /// only when lines were omitted (the caller must then persist the raw output under it).
-pub fn shape_search(
-    text: &str,
+/// `single_path` labels output without paths (single-file `grep -n`); `None` means unknown.
+pub fn shape_search<'a>(
+    text: &'a str,
     cwd: Option<&str>,
     cfg: &ShapeConfig,
     handle: Option<&str>,
+    single_path: Option<&'a str>,
 ) -> Result<SearchShape, SearchSkip> {
     let raw_tokens = cfg.est_tokens(text.len());
     if raw_tokens < cfg.search_threshold_tokens {
@@ -307,9 +329,21 @@ pub fn shape_search(
         .lines()
         .filter(|l| !l.is_empty() && *l != "--")
         .collect();
-    let parsed: Vec<Option<Parsed>> = lines.iter().map(|l| parse_line(l)).collect();
-    let ok = parsed.iter().filter(|p| p.is_some()).count();
-    if lines.is_empty() || (ok as f64) < lines.len() as f64 * cfg.search_min_parsed {
+    let enough =
+        |n: usize| !lines.is_empty() && n as f64 >= lines.len() as f64 * cfg.search_min_parsed;
+    let mut parsed: Vec<Option<Parsed>> = lines.iter().map(|l| parse_line(l)).collect();
+    let mut ok = parsed.iter().filter(|p| p.is_some()).count();
+    if !enough(ok) {
+        // Output without paths: one file, `12:text` lines.
+        let label = single_path.unwrap_or("(single file)");
+        let by_lineno: Vec<Option<Parsed>> = lines.iter().map(|l| parse_lineno(l, label)).collect();
+        let n = by_lineno.iter().filter(|p| p.is_some()).count();
+        if enough(n) {
+            parsed = by_lineno;
+            ok = n;
+        }
+    }
+    if !enough(ok) {
         // not grep-shaped (e.g. single-file output without paths): record what it looked like
         let mut forms: Vec<(&'static str, usize)> = Vec::new();
         for l in lines
@@ -546,8 +580,8 @@ mod tests {
     fn search_groups_by_file_and_relativizes() {
         let cwd = "C:/work/repo";
         let text = grep_output(10, 8, "C:/work/repo/");
-        let r =
-            shape_search(&text, Some(cwd), &ShapeConfig::default(), Some("h_x")).expect("shaped");
+        let r = shape_search(&text, Some(cwd), &ShapeConfig::default(), Some("h_x"), None)
+            .expect("shaped");
         assert_eq!(r.matches, 80);
         assert_eq!(r.files, 10);
         assert_eq!(r.omitted_lines, 0);
@@ -566,7 +600,7 @@ mod tests {
     #[test]
     fn search_caps_per_file_with_exact_totals_and_handle() {
         let text = grep_output(2, 50, "");
-        let r = shape_search(&text, None, &ShapeConfig::default(), Some("h_abc")).unwrap();
+        let r = shape_search(&text, None, &ShapeConfig::default(), Some("h_abc"), None).unwrap();
         assert_eq!(r.matches, 100);
         assert_eq!(r.omitted_lines, 60);
         assert!(r.text.contains("(50 matches, showing first 20 lines)"));
@@ -587,7 +621,7 @@ mod tests {
                 i * 3 + 1
             ));
         }
-        let r = shape_search(&text, Some("C:\\repo"), &ShapeConfig::default(), None).unwrap();
+        let r = shape_search(&text, Some("C:\\repo"), &ShapeConfig::default(), None, None).unwrap();
         assert_eq!(r.matches, 60);
         assert!(
             r.text
@@ -597,22 +631,36 @@ mod tests {
     }
 
     #[test]
-    fn single_file_output_without_paths_passes_through() {
+    fn single_file_output_without_paths_is_capped_under_one_label() {
+        // Grep tool on one file / `grep -n pat file`: `12:text` matches, `13-text` context.
         let text: String = (0..400)
-            .map(|i| format!("{i}:    some matching line content here\n"))
+            .map(|i| {
+                if i % 4 == 3 {
+                    format!("{i}-    context line around a match\n")
+                } else {
+                    format!("{i}:    some matching line content here\n")
+                }
+            })
             .collect();
-        let skip = shape_search(&text, None, &ShapeConfig::default(), None).unwrap_err();
-        assert_eq!(skip.reason(), "unparsed");
-        assert_eq!(
-            skip,
-            SearchSkip::Unparsed {
-                lines: 400,
-                parsed: 0,
-                forms: vec![("lineno_only", 400)]
-            }
+        let r = shape_search(
+            &text,
+            None,
+            &ShapeConfig::default(),
+            Some("h_s"),
+            Some("src/big.rs"),
+        )
+        .expect("shaped");
+        assert_eq!((r.matches, r.files, r.omitted_lines), (300, 1, 380));
+        assert!(
+            r.text
+                .starts_with("src/big.rs (300 matches, showing first 20 lines)\n  0:    some")
         );
+        assert!(r.text.contains("`aaes show h_s`"));
+        // Unknown file (shell grep): generic label.
+        let r = shape_search(&text, None, &ShapeConfig::default(), Some("h_s"), None).unwrap();
+        assert!(r.text.starts_with("(single file) (300 matches"));
         assert!(matches!(
-            shape_search("a.rs:1:x\n", None, &ShapeConfig::default(), None),
+            shape_search("a.rs:1:x\n", None, &ShapeConfig::default(), None, None),
             Err(SearchSkip::Small)
         ));
     }
@@ -625,7 +673,8 @@ mod tests {
             .map(|i| format!("{i}:    single file hit {i}\n"))
             .collect();
         text.push_str(&extra);
-        let r = shape_search(&text, None, &ShapeConfig::default(), Some("h_m")).expect("shaped");
+        let r =
+            shape_search(&text, None, &ShapeConfig::default(), Some("h_m"), None).expect("shaped");
         let tail = r
             .text
             .split("verbatim in original order:\n")
@@ -633,11 +682,19 @@ mod tests {
             .expect("other block");
         assert!(tail.starts_with("0:    single file hit 0\n1:    single file hit 1\n"));
         assert!(r.text.contains("[aaes] 40 other lines"));
-        // below the bar: mostly unparsed
+        // Mostly line-number-only: grouped as one file, path lines kept verbatim.
         let mostly: String =
             (0..300).map(|i| format!("{i}: x\n")).collect::<String>() + &grep_output(1, 50, "a/");
+        let r = shape_search(&mostly, None, &ShapeConfig::default(), Some("h_m"), None).unwrap();
+        assert_eq!(r.files, 1);
+        assert!(r.text.contains("[aaes] 50 other lines"));
+        // Neither form reaches the bar: pass through.
+        let neither: String = (0..300)
+            .map(|i| format!("plain text line {i} without any position\n"))
+            .collect::<String>()
+            + &(0..300).map(|i| format!("{i}: x\n")).collect::<String>();
         assert_eq!(
-            shape_search(&mostly, None, &ShapeConfig::default(), None)
+            shape_search(&neither, None, &ShapeConfig::default(), None, None)
                 .unwrap_err()
                 .reason(),
             "unparsed"

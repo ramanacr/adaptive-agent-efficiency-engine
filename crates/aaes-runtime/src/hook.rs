@@ -325,10 +325,14 @@ impl Ctx<'_> {
         out
     }
 
-    /// `(ms since shaped, head lines shown, total lines)` if `key` was shaped in this context.
+    /// `(ms since shaped, head lines shown, total lines)` if `key` was shaped in this context
+    /// within the follow-up window. A read much later is a new need, not a follow-up of the
+    /// shaped view, and must not count against read shaping (MET-015).
     fn shaped_info(&self, key: &str) -> Option<(u64, usize, usize)> {
         let _g = self.rt.lock.lock().unwrap_or_else(|e| e.into_inner());
-        State::load(self.dir).shaped_info(self.ctx, key)
+        State::load(self.dir)
+            .shaped_info(self.ctx, key)
+            .filter(|(ms, _, _)| *ms <= self.rt.cfg.followup_window_secs.saturating_mul(1000))
     }
 }
 
@@ -502,12 +506,21 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 "mode": mode,
                 "context": ti["-C"].is_number() || ti["-A"].is_number() || ti["-B"].is_number(),
             });
-            search(&c, session, content, cwd, cfg, d, |text| {
-                let mut new = resp.clone();
-                new["numLines"] = json!(text.lines().count());
-                new["content"] = json!(text);
-                new
-            })
+            search(
+                &c,
+                session,
+                content,
+                cwd,
+                cfg,
+                ti["path"].as_str(),
+                d,
+                |text| {
+                    let mut new = resp.clone();
+                    new["numLines"] = json!(text.lines().count());
+                    new["content"] = json!(text);
+                    new
+                },
+            )
         }
         "Bash" | "PowerShell" => {
             let (Some(cmd), Some(stdout)) = (ti["command"].as_str(), resp["stdout"].as_str())
@@ -573,7 +586,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
             }
             if shape::is_shell_search(cmd) {
                 let d = json!({ "cmd": cmd_shape });
-                return search(&c, session, stdout, cwd, cfg, d, |text| {
+                return search(&c, session, stdout, cwd, cfg, None, d, |text| {
                     let mut new = resp.clone();
                     new["stdout"] = json!(text);
                     new
@@ -609,11 +622,13 @@ fn search(
     raw: &str,
     cwd: Option<&str>,
     cfg: &ShapeConfig,
+    single_path: Option<&str>,
     mut detail: Value,
     build: impl FnOnce(&str) -> Value,
 ) -> Value {
     let handle = store::new_handle();
-    let s = match shape::shape_search(raw, cwd, cfg, Some(&handle)) {
+    let single_path = single_path.map(|p| shape::display_rel(p, cwd));
+    let s = match shape::shape_search(raw, cwd, cfg, Some(&handle), single_path) {
         Ok(s) => s,
         Err(skip) => {
             detail["lines"] = json!(raw.lines().count());
@@ -826,8 +841,9 @@ mod tests {
     #[test]
     fn unparsed_search_and_unhandled_commands_are_recorded() {
         let (rt, home) = rt();
+        // Neither `path:line:` nor `line:` form (e.g. `grep -c` style counts with labels).
         let stdout: String = (0..400)
-            .map(|i| format!("{i}:  matching line text\n"))
+            .map(|i| format!("matching line text number {i}\n"))
             .collect();
         let bash = |cmd: &str, out: &str| {
             json!({
@@ -933,6 +949,33 @@ mod tests {
             }
         }
         assert!(scanned > 0);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn follow_up_counts_only_within_the_window() {
+        let rebound_of_last = |home: &std::path::Path, session: &str| {
+            let text =
+                std::fs::read_to_string(paths::session_dir(home, session).join("events.jsonl"))
+                    .unwrap();
+            let last: Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+            last["rebound"].as_bool().unwrap()
+        };
+        let src = big_ts();
+        let path = "C:\\repo\\src\\big.ts";
+        // Default window (5 min): a ranged read right after the shaped read is a follow-up.
+        let (rt1, home) = rt();
+        handle(&rt1, &read_event("w1", None, path, &src, false));
+        handle(&rt1, &read_event("w1", None, path, &src, true));
+        assert!(rebound_of_last(&home, "w1"));
+        let _ = std::fs::remove_dir_all(&home);
+        // Window exceeded: the same ranged read is a new need, not a follow-up.
+        let (mut rt2, home) = rt();
+        rt2.cfg.followup_window_secs = 0;
+        handle(&rt2, &read_event("w2", None, path, &src, false));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        handle(&rt2, &read_event("w2", None, path, &src, true));
+        assert!(!rebound_of_last(&home, "w2"));
         let _ = std::fs::remove_dir_all(&home);
     }
 

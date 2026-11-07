@@ -15,6 +15,8 @@ pub struct Config {
     pub log_level: crate::log::Level,
     /// Inject a short "AAES is active" notice at session start (FUN-016).
     pub session_guidance: bool,
+    /// A read of a shaped file counts as its follow-up (MET-015) only within this window.
+    pub followup_window_secs: u64,
 }
 
 impl Default for Config {
@@ -25,6 +27,7 @@ impl Default for Config {
             retention_hours: 24,
             log_level: crate::log::Level::Info,
             session_guidance: true,
+            followup_window_secs: 300,
         }
     }
 }
@@ -64,6 +67,9 @@ impl Config {
         }
         if let Some(x) = u("retention_hours") {
             c.retention_hours = x;
+        }
+        if let Some(x) = u("followup_window_secs") {
+            c.followup_window_secs = x;
         }
         if let Some(b) = v["session_guidance"].as_bool() {
             c.session_guidance = b;

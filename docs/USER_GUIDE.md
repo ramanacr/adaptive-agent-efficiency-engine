@@ -68,6 +68,8 @@ If a search result is above `search_threshold_tokens`, the agent gets:
 
 AAES shapes a search only if at least `search_min_parsed` of its lines look like grep output. Lines that do not parse are kept verbatim, in order, after the grouped part.
 
+Output of a search in one file has no paths (`12:text` lines, from the Grep tool on one file or `grep -n pattern file`). AAES shapes it as one group, labelled with the file path when the Grep tool gives it, else `(single file)`.
+
 ### 3.3 Everything else
 
 All other tool results pass through unchanged. AAES never changes tool input, and never changes Edit, Write or other tool results.
@@ -128,7 +130,7 @@ Token numbers are estimates: bytes divided by `bytes_per_token` (default 2.4).
 
 ### 6.2 Follow-ups and net saving (MET-015)
 
-A **follow-up** is a read of a file after AAES shaped it in the same context. Follow-ups are expected: the outline points the agent to a section. But they cost tokens, so the report subtracts them:
+A **follow-up** is a read of a file within `followup_window_secs` (default 5 minutes) after AAES shaped it in the same context. A read after that is a new need, not a follow-up. Follow-ups are expected: the outline points the agent to a section. But they cost tokens, so the report subtracts them:
 
 - **net tok** = saved tokens minus follow-up tokens;
 - **per shaped** = follow-up calls per shaped result.
@@ -219,6 +221,7 @@ Put an optional `config.json` in the data folder. Missing keys keep their defaul
 | `search_max_lines_per_file` | 20 | Lines shown per file in a shaped search |
 | `search_min_parsed` | 0.7 | Minimum share of grep-style lines (0.5–1.0) |
 | `bytes_per_token` | 2.4 | Token estimate in reports |
+| `followup_window_secs` | 300 | A read of a shaped file counts as a follow-up only within this time |
 | `retention_hours` | 24 | Delete session data this long after last activity |
 | `session_guidance` | true | Add the session notice |
 | `log_level` | `info` | `error`, `warn`, `info` or `debug` |
