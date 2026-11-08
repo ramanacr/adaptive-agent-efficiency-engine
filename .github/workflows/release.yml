@@ -75,9 +75,54 @@ jobs:
           path: out/aaes
           if-no-files-found: error
 
+  # Authenticode signing of the Windows binaries with the Certum SimplySign cloud certificate.
+  # Off until the repository variable AAES_SIGN_WINDOWS is 'true'. The secrets CERTUM_EMAIL and
+  # CERTUM_OTP (TOTP seed) live in the protected `signing` environment. When on, a signing
+  # failure stops the release. Signing runs before packaging, so checksums, SBOM and provenance
+  # cover the signed files.
+  sign-windows:
+    name: sign Windows binaries
+    needs: build
+    if: vars.AAES_SIGN_WINDOWS == 'true'
+    runs-on: windows-latest
+    environment: signing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*-pc-windows-msvc
+      - name: Install ssign (pinned)
+        run: cargo install ssign --version 0.1.11 --locked
+      - name: Sign
+        shell: bash
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: ssign bin-x86_64-pc-windows-msvc/aaes.exe bin-aarch64-pc-windows-msvc/aaes.exe
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          foreach ($f in 'bin-x86_64-pc-windows-msvc/aaes.exe', 'bin-aarch64-pc-windows-msvc/aaes.exe') {
+            $s = Get-AuthenticodeSignature $f
+            "$f : $($s.Status) | $($s.SignerCertificate.Subject)"
+            if ($s.Status -ne 'Valid') { throw "signature not valid: $f ($($s.StatusMessage))" }
+            if (-not $s.TimeStamperCertificate) { throw "no RFC 3161 timestamp: $f" }
+          }
+          ./bin-x86_64-pc-windows-msvc/aaes.exe --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-windows
+          path: |
+            bin-x86_64-pc-windows-msvc/aaes.exe
+            bin-aarch64-pc-windows-msvc/aaes.exe
+          if-no-files-found: error
+
   package:
     name: package and release
-    needs: [build, universal]
+    needs: [build, universal, sign-windows]
+    # Runs when signing succeeded or was switched off (skipped); never after a signing failure.
+    if: >-
+      !cancelled() && needs.build.result == 'success' && needs.universal.result == 'success' &&
+      (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write      # draft release
@@ -88,6 +133,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: bin-*
+      - name: Signed Windows binaries
+        if: needs.sign-windows.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: signed-windows
+          path: signed
       - name: Archives and checksums
         shell: bash
         run: |
@@ -95,7 +146,9 @@ jobs:
           v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           mkdir dist
           for t in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
-            d=$(mktemp -d); cp bin-$t/aaes.exe LICENSE README.md "$d/"
+            src=bin-$t
+            if [ -f "signed/bin-$t/aaes.exe" ]; then src=signed/bin-$t; echo "$t: signed"; else echo "$t: unsigned"; fi
+            d=$(mktemp -d); cp "$src/aaes.exe" LICENSE README.md "$d/"
             (cd "$d" && zip -q -9 "$GITHUB_WORKSPACE/dist/aaes-v$v-$t.zip" aaes.exe LICENSE README.md)
           done
           for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl universal-apple-darwin; do

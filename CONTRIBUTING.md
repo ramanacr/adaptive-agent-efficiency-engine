@@ -33,6 +33,15 @@ CI also runs `cargo deny check` (licenses, advisories, sources; policy in `deny.
 
 `workflow_dispatch` on the `release` workflow runs the same build and packaging without a release (the files are a workflow artifact).
 
+### Windows code signing
+The `sign-windows` job signs both Windows binaries (Authenticode, SHA-256, RFC 3161 timestamp) with a Certum SimplySign cloud certificate, using the pinned [`ssign`](https://github.com/Le-Syl21/ssign) CLI. It runs before packaging, so `SHA256SUMS`, the SBOM and the provenance cover the signed files. It is off until the maintainer turns it on:
+1. In the repository settings, create the environment `signing`. Limit its deployments to the `main` branch and `v*` tags.
+2. Add two environment secrets to `signing`: `CERTUM_EMAIL` (the SimplySign account e-mail) and `CERTUM_OTP` (the TOTP seed behind the SimplySign authenticator, base32 or `otpauth://` URI). The seed lets anyone sign as the certificate holder: never put it anywhere else, and re-issue the SimplySign QR code if it leaks.
+3. Add the repository variable `AAES_SIGN_WINDOWS` = `true`.
+4. Run the workflow manually and check that the "Verify signatures" step shows `Valid` with a timestamp.
+
+When signing is on, a signing failure stops the release. To switch it off, delete the variable or set it to anything other than `true`. macOS binaries are not signed or notarized.
+
 ## Commit and PR conventions
 - Small, focused PRs, with requirement/ADR IDs referenced where relevant (e.g. `FUN-022`).
 - New parsers need golden fixtures for success, failure and truncated output, under both Bash and PowerShell where the command exists on Windows.
