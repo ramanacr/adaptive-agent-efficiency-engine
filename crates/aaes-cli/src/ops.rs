@@ -263,6 +263,7 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
     // Same totals split by "working folder is in a CodeGraph-indexed repo" (old events: unknown).
     let mut idx: BTreeMap<&'static str, Family> = BTreeMap::new();
     let mut edits = Edits::default();
+    let mut by_repo: BTreeMap<String, BTreeMap<&'static str, Family>> = BTreeMap::new();
     let claude_root = aaes_transcripts::discover::default_claude_root();
     if let Ok(rd) = std::fs::read_dir(rt.home.join("sessions")) {
         for e in rd.flatten() {
@@ -306,14 +307,13 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                 if v["rebound"].as_bool() == Some(true) {
                     rebound_bytes += raw;
                     rebound_n += 1;
-                    let f = fam.entry(family_of(v["kind"].as_str())).or_default();
-                    f.follow_n += 1;
-                    f.follow_bytes += raw;
                 }
-                if v["action"].as_str() == Some("shaped") {
-                    let f = fam.entry(family_of(v["kind"].as_str())).or_default();
-                    f.shaped_n += 1;
-                    f.saved += raw.saturating_sub(v["delivered_bytes"].as_u64().unwrap_or(0));
+                count_family(&v, &mut fam);
+                // Events from a folder with a repo override carry its name.
+                if let Some(r) = v["repo"].as_str() {
+                    let m = by_repo.entry(r.to_owned()).or_default();
+                    count_family(&v, m);
+                    timelines.add_cost(&v, m, bpt);
                 }
             }
             if let (Some(root), Some(id)) = (&claude_root, e.file_name().to_str()) {
@@ -360,6 +360,13 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                     "calls": f.calls, "shaped": f.shaped_n, "saved_bytes": f.saved,
                     "follow_ups": f.follow_n, "net_tokens_est": f.net_tokens(bpt),
                 }))).collect::<serde_json::Map<String, Value>>(),
+                "by_repo": by_repo.iter().map(|(r, m)| (r.clone(), Value::Object(m.iter().map(|(k, f)| (k.to_string(), serde_json::json!({
+                    "shaped": f.shaped_n, "saved_bytes": f.saved,
+                    "follow_ups": f.follow_n, "net_tokens_est": f.net_tokens(bpt),
+                    "net_units": f.net_units().round(), "matched_events": f.cost_n,
+                    "shadow_results": f.shadow_n, "shadow_would_save_units": f.shadow_units.round(),
+                    "advice": advice(f, bpt),
+                }))).collect()))).collect::<serde_json::Map<String, Value>>(),
                 "bytes_per_token": bpt
             })
         );
@@ -429,8 +436,80 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
             );
         }
     }
+    print_repos(&by_repo, bpt);
     edits.print();
     Ok(())
+}
+
+/// Adds the shaped and follow-up counts of one event to its family.
+fn count_family(v: &Value, fam: &mut BTreeMap<&'static str, Family>) {
+    let raw = v["raw_bytes"].as_u64().unwrap_or(0);
+    if v["rebound"].as_bool() == Some(true) {
+        let f = fam.entry(family_of(v["kind"].as_str())).or_default();
+        f.follow_n += 1;
+        f.follow_bytes += raw;
+    }
+    if v["action"].as_str() == Some("shaped") {
+        let f = fam.entry(family_of(v["kind"].as_str())).or_default();
+        f.shaped_n += 1;
+        f.saved += raw.saturating_sub(v["delivered_bytes"].as_u64().unwrap_or(0));
+    }
+}
+
+/// Fewest shaped (or shadow) results before [`advice`] judges a family in a repo.
+const ADVICE_MIN: u64 = 10;
+
+/// What to do with one family in one repo, from its measured net saving (cost-weighted when the
+/// transcripts matched) or, for a family in shadow mode, from its would-be saving.
+fn advice(f: &Family, bpt: f64) -> &'static str {
+    if f.shaped_n >= ADVICE_MIN {
+        let net_positive = if f.cost_n > 0 {
+            f.net_units() > 0.0
+        } else {
+            f.net_tokens(bpt) > 0
+        };
+        if net_positive && f.follow_ups_per_shaped() <= 1.0 {
+            "keep"
+        } else {
+            "turn off or raise the threshold"
+        }
+    } else if f.shaped_n == 0 && f.shadow_n >= ADVICE_MIN {
+        if f.shadow_units > 0.0 || f.shadow_saved > 0 {
+            "try it on (shadow saving is an upper bound)"
+        } else {
+            "no gain in shadow mode"
+        }
+    } else {
+        "collecting data"
+    }
+}
+
+/// Per-repo totals, for folders with a repo override in `config.json`.
+fn print_repos(by_repo: &BTreeMap<String, BTreeMap<&'static str, Family>>, bpt: f64) {
+    if by_repo.is_empty() {
+        return;
+    }
+    println!(
+        "\nBy repo override (config.json `repos`; cost-weighted = uncached-input-equivalent tokens)"
+    );
+    println!(
+        "{:<8} {:>7} {:>10} {:>13} {:>11} {:>14}  {:<}",
+        "family", "shaped", "net tok", "net weighted", "per shaped", "shadow weighted", "advice"
+    );
+    for (repo, m) in by_repo {
+        println!("{repo}");
+        for (k, f) in m.iter().filter(|(k, _)| **k != "other") {
+            println!(
+                "{k:<8} {:>7} {:>10} {:>13.0} {:>11.2} {:>14.0}  {}",
+                f.shaped_n,
+                f.net_tokens(bpt),
+                f.net_units(),
+                f.follow_ups_per_shaped(),
+                f.shadow_units,
+                advice(f, bpt)
+            );
+        }
+    }
 }
 
 /// Cache-aware cost per family. Units are uncached-input-equivalent tokens: a saved token counts
@@ -869,6 +948,44 @@ mod tests {
         assert_eq!(j["all"]["calls"], 4);
         assert_eq!(j["excluded_rejected"], 1);
         assert_eq!(j["failure_classes"]["not_found"], 1);
+    }
+
+    #[test]
+    fn repo_advice_needs_data_and_uses_net_saving() {
+        let bpt = 2.4;
+        let few = Family {
+            shaped_n: 3,
+            saved: 90_000,
+            ..Default::default()
+        };
+        assert_eq!(advice(&few, bpt), "collecting data");
+        let good = Family {
+            shaped_n: 20,
+            saved: 90_000,
+            follow_n: 5,
+            follow_bytes: 10_000,
+            ..Default::default()
+        };
+        assert_eq!(advice(&good, bpt), "keep");
+        // Byte-level net is positive, but the cache-aware net is negative: follow-ups came late
+        // in long contexts.
+        let costly = Family {
+            cost_n: 25,
+            saved_units: 1_000.0,
+            follow_units: 4_000.0,
+            ..good
+        };
+        assert_eq!(advice(&costly, bpt), "turn off or raise the threshold");
+        let shadow = Family {
+            shadow_n: 12,
+            shadow_saved: 50_000,
+            shadow_units: 900.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            advice(&shadow, bpt),
+            "try it on (shadow saving is an upper bound)"
+        );
     }
 
     #[test]

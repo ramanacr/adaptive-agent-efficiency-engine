@@ -17,6 +17,7 @@ use std::time::Instant;
 use aaes_core::shape::{self, ShapeConfig};
 use serde_json::{Value, json};
 
+use crate::config::Effective;
 use crate::events::{self, Action, Event};
 use crate::log;
 use crate::state::State;
@@ -125,7 +126,7 @@ pub fn handle(rt: &Runtime, input: &Value) -> Value {
                 json!({
                     "hookSpecificOutput": {
                         "hookEventName": "SessionStart",
-                        "additionalContext": session_guidance(rt.cfg.read_shaping),
+                        "additionalContext": session_guidance(rt.cfg.for_cwd(input["cwd"].as_str()).read_shaping),
                     }
                 })
             } else {
@@ -234,6 +235,8 @@ struct Ctx<'a> {
     session: &'a str,
     t0: Instant,
     codegraph: Option<bool>,
+    /// Global settings or the repo override for the call's working folder.
+    eff: Effective<'a>,
 }
 
 /// Lower-cased file extension (diagnostics only).
@@ -310,6 +313,7 @@ impl Ctx<'_> {
                 dur_us,
                 codegraph: self.codegraph,
                 shadow_bytes,
+                repo: self.eff.repo,
             },
         );
         let mut rec = json!({
@@ -401,7 +405,8 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
     let ti = &input["tool_input"];
     let resp = &input["tool_response"];
     let cwd = input["cwd"].as_str();
-    let cfg: &ShapeConfig = &rt.cfg.shape;
+    let eff = rt.cfg.for_cwd(cwd);
+    let cfg: &ShapeConfig = eff.shape;
     let c = Ctx {
         rt,
         dir,
@@ -411,6 +416,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
         session,
         t0: Instant::now(),
         codegraph: cwd.map(in_codegraph_repo),
+        eff,
     };
 
     match tool {
@@ -465,7 +471,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 );
                 return json!({});
             }
-            if rt.cfg.shadow("read") {
+            if eff.shadow("read") {
                 if let Some(r) = shape::shape_read(path, content, cfg) {
                     let total = total_lines.unwrap_or(r.total_lines);
                     let context = shape::read_context(display_path(path, cwd), &r, total);
@@ -479,7 +485,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                     return json!({});
                 }
             }
-            if !rt.cfg.read_shaping {
+            if !eff.read_shaping {
                 c.log(
                     "read",
                     Action::PassThrough,
@@ -634,7 +640,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
             if let Some(target) = shape::shell_read_target(cmd) {
                 let key = read_key(&target, cwd);
                 let base = json!({ "cmd": cmd_shape, "ext": ext(&target) });
-                if rt.cfg.shadow("read") {
+                if eff.shadow("read") {
                     if let Some(r) = shape::shape_read(&target, stdout, cfg) {
                         let text = shape::shell_read_text(display_path(&target, cwd), &r);
                         let mut d = base;
@@ -643,7 +649,7 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                         return json!({});
                     }
                 }
-                if !rt.cfg.read_shaping {
+                if !eff.read_shaping {
                     c.log(
                         "shell_read",
                         Action::PassThrough,
@@ -778,7 +784,7 @@ fn search(
             return json!({});
         }
     };
-    if c.rt.cfg.shadow("search") {
+    if c.eff.shadow("search") {
         // Nothing is stored: the agent has every line, so the handle in the shaped text is unused.
         detail["matches"] = json!(s.matches);
         detail["files"] = json!(s.files);
@@ -923,6 +929,47 @@ mod tests {
             &read_event("s2", None, "C:\\repo\\src\\big.ts", &src, false),
         );
         assert!(out["hookSpecificOutput"]["updatedToolOutput"].is_object());
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn repo_override_turns_read_shaping_on_for_one_repo_and_labels_events() {
+        let home = std::env::temp_dir().join(format!(
+            "aaes-hook-{}-{}",
+            std::process::id(),
+            store::new_handle()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join("config.json"),
+            r#"{"repos": {"C:/repo": {"read_shaping": true}}}"#,
+        )
+        .unwrap();
+        let rt = Runtime::new(home.clone());
+        assert!(!rt.cfg.read_shaping);
+        let src = big_ts();
+        // Inside the repo (cwd C:\repo): shaped.
+        let out = handle(
+            &rt,
+            &read_event("s1", None, "C:\\repo\\src\\big.ts", &src, false),
+        );
+        assert!(out["hookSpecificOutput"]["updatedToolOutput"].is_object());
+        // Outside the repo: global setting (off).
+        let mut other = read_event("s1", None, "C:\\other\\big.ts", &src, false);
+        other["cwd"] = json!("C:\\other");
+        assert_eq!(handle(&rt, &other), json!({}));
+
+        let events =
+            std::fs::read_to_string(paths::session_dir(&home, "s1").join("events.jsonl")).unwrap();
+        let rows: Vec<Value> = events
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["action"], "shaped");
+        assert_eq!(rows[0]["repo"], "C:/repo");
+        assert_eq!(rows[1]["reason"], "read_shaping_off");
+        assert!(rows[1].get("repo").is_none());
         let _ = std::fs::remove_dir_all(home);
     }
 

@@ -146,7 +146,7 @@ fn live_search(text: &str) -> bool {
 }
 
 struct Replayer<'a> {
-    cfg: &'a ShapeConfig,
+    config: &'a Config,
     timeline: &'a Timeline,
     since: Option<&'a str>,
     /// Whole-file reads seen in the current context since the last compaction.
@@ -156,7 +156,12 @@ struct Replayer<'a> {
     tally: Tally,
 }
 
-impl Replayer<'_> {
+impl<'a> Replayer<'a> {
+    /// Shaping settings for the result's working folder (repo override or global).
+    fn shape_for(&self, cwd: Option<&str>) -> &'a ShapeConfig {
+        self.config.for_cwd(cwd).shape
+    }
+
     fn line(&mut self, line: &str) {
         let compact = line.contains("compact_boundary") || line.contains("isCompactSummary");
         let call = line.contains(r#""tool_use""#);
@@ -230,7 +235,7 @@ impl Replayer<'_> {
 
     fn shaped(&mut self, fam: &'static str, raw: usize, out: usize, ts: Option<u64>) {
         let (w, k) = self.weight(ts);
-        let saved_tokens = raw.saturating_sub(out) as f64 / self.cfg.bytes_per_token;
+        let saved_tokens = raw.saturating_sub(out) as f64 / self.config.shape.bytes_per_token;
         let f = self.tally.fam(fam);
         f.shaped += 1;
         f.shaped_raw_bytes += raw as u64;
@@ -252,7 +257,7 @@ impl Replayer<'_> {
             self.tally.fam(fam).repeat += 1;
             return;
         }
-        let Some(r) = shape::shape_read(path, content, self.cfg) else {
+        let Some(r) = shape::shape_read(path, content, self.shape_for(cwd)) else {
             self.tally.fam(fam).small += 1;
             return;
         };
@@ -267,7 +272,7 @@ impl Replayer<'_> {
 
     fn search(&mut self, raw: &str, cwd: Option<&str>, single: Option<&str>, ts: Option<u64>) {
         let single = single.map(|p| shape::display_rel(p, cwd));
-        match shape::shape_search(raw, cwd, self.cfg, Some("h_replay"), single) {
+        match shape::shape_search(raw, cwd, self.shape_for(cwd), Some("h_replay"), single) {
             Ok(s) => self.shaped("search", raw.len(), s.text.len(), ts),
             Err(skip) => {
                 let f = self.tally.fam("search");
@@ -312,7 +317,7 @@ impl Replayer<'_> {
                 }
                 let num = resp["file"]["numLines"].as_u64().unwrap_or(0);
                 let total = resp["file"]["totalLines"].as_u64().unwrap_or(0);
-                if num > 0 && num <= self.cfg.head_lines as u64 && total > num {
+                if num > 0 && num <= self.shape_for(cwd).head_lines as u64 && total > num {
                     // AAES replaced the content with the head lines.
                     self.seen.insert(read_key(path, cwd));
                     self.tally.fam("read").live += 1;
@@ -386,7 +391,7 @@ impl Replayer<'_> {
 }
 
 /// Replays one transcript file (one context: the main conversation or one sub-agent).
-pub fn replay_file(path: &Path, cfg: &ShapeConfig, since: Option<&str>) -> Tally {
+pub fn replay_file(path: &Path, cfg: &Config, since: Option<&str>) -> Tally {
     let open = || File::open(path).map(|f| BufReader::with_capacity(1 << 16, f));
     let Ok(r) = open() else {
         return Tally::default();
@@ -400,12 +405,12 @@ pub fn replay_file(path: &Path, cfg: &ShapeConfig, since: Option<&str>) -> Tally
 
 pub fn replay_reader<R: BufRead>(
     reader: R,
-    cfg: &ShapeConfig,
+    cfg: &Config,
     timeline: &Timeline,
     since: Option<&str>,
 ) -> Tally {
     let mut r = Replayer {
-        cfg,
+        config: cfg,
         timeline,
         since,
         seen: HashSet::new(),
@@ -430,7 +435,7 @@ pub fn run(a: ReplayArgs) -> Result<()> {
     } else {
         Config::load(&paths::aaes_home())
     };
-    let shape_cfg = cfg.shape;
+    let shape_cfg = cfg.shape.clone();
     let filter = a.project.as_deref().map(str::to_lowercase);
     let project_of = |p: &Path| -> String {
         p.strip_prefix(&root)
@@ -458,7 +463,7 @@ pub fn run(a: ReplayArgs) -> Result<()> {
     );
     let per_file: Vec<(String, Tally)> = files
         .par_iter()
-        .map(|(proj, p)| (proj.clone(), replay_file(p, &shape_cfg, a.since.as_deref())))
+        .map(|(proj, p)| (proj.clone(), replay_file(p, &cfg, a.since.as_deref())))
         .collect();
     let mut total = Tally::default();
     let mut by_project: BTreeMap<String, Tally> = BTreeMap::new();
@@ -682,7 +687,7 @@ mod tests {
     fn run_lines(lines: &[String]) -> Tally {
         let text = lines.join("\n");
         let t = Timeline::from_reader(text.as_bytes(), &Weights::default());
-        replay_reader(text.as_bytes(), &ShapeConfig::default(), &t, None)
+        replay_reader(text.as_bytes(), &Config::default(), &t, None)
     }
 
     fn read_resp(content: &str) -> Value {

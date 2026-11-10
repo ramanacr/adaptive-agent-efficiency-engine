@@ -92,6 +92,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - Tune per-family policies (versioned config) via offline replay.
   - ✅ Shadow mode (2026-11-10): `"shadow": ["read", "search"]` in `config.json` computes the shaped output and logs its size, but delivers the raw output; `aaes report` shows the would-be saving (an upper bound, no follow-ups). New renderers (M3) start in shadow mode before they are turned on.
   - ✅ Offline replay (2026-11-10): `aaes replay` runs the current shapers over past Claude Code tool results (`toolUseResult`, the hook's input shape) with the hook's repeat, ranged and host-truncated rules, and reports would-be savings per family and per project, cost-weighted. An upper bound (no follow-ups); it is the input for per-repo thresholds.
+  - ✅ Per-repo overrides (2026-11-10): `repos` in `config.json` sets `read_shaping`, `shadow` and the shaping thresholds per repo root (closest root wins, unset keys inherit). Events carry the override name; `aaes report` shows a per-repo table with advice (keep / turn off or raise the threshold / try it on) from the cost-weighted net saving, and `aaes replay` applies the same overrides. Settings change only by the user; automatic adjustment is not planned until the advice is validated.
 
 **Exit**: net-positive on the representative workload *and* a material gain over A′, or a documented re-scope.
 

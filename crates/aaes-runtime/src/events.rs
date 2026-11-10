@@ -47,6 +47,8 @@ pub struct Event<'a> {
     pub codegraph: Option<bool>,
     /// Shadow mode only: bytes the shaped output would have had.
     pub shadow_bytes: Option<usize>,
+    /// Name of the repo override (`repos` in `config.json`) that applied, as the user wrote it.
+    pub repo: Option<&'a str>,
 }
 
 pub fn fnv_hex(s: &str) -> String {
@@ -80,6 +82,9 @@ pub fn append(session_dir: &Path, e: &Event) {
     }
     if let Some(b) = e.shadow_bytes {
         rec["shadow_bytes"] = json!(b);
+    }
+    if let Some(r) = e.repo {
+        rec["repo"] = json!(r);
     }
     if paths::create_private_dir(session_dir).is_err() {
         return;

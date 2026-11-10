@@ -205,6 +205,28 @@ AAES reads these numbers from the Claude Code transcripts of the kept sessions (
 
 Compare the failure rate of `after shaped read` with `other files`. A clearly higher rate after shaped reads means read shaping hides text the agent needs. Failure classes: `not_found`, `not_unique`, `not_read`, `stale`, `no_change`, `other`. Edits the user rejected are counted separately.
 
+### 6.6 By repo override
+
+This table appears when `config.json` has per-repo overrides (section 9.1). It shows, for each repo and family:
+
+- `shaped`: the shaped results.
+- `net tok`: the net saving in tokens, after follow-ups.
+- `net weighted`: the same net saving, cost-weighted (section 6.3).
+- `per shaped`: follow-ups per shaped result.
+- `shadow weighted`: the would-be saving in shadow mode.
+
+The `advice` column says what to do with the family in that repo:
+
+| Advice | Meaning |
+|---|---|
+| `collecting data` | Fewer than 10 shaped or shadow results |
+| `keep` | The net saving is positive (cost-weighted, when the transcripts match) with at most 1 follow-up per shaped result |
+| `turn off or raise the threshold` | The family costs more than it saves in this repo |
+| `try it on (shadow saving is an upper bound)` | The family is in shadow mode and would save tokens |
+| `no gain in shadow mode` | Shadow mode shows no saving |
+
+AAES does not change the settings by itself. You decide, and you change `config.json`.
+
 ## 7. Diagnostics: `aaes logs`
 
 ```bash
@@ -268,12 +290,42 @@ Put an optional `config.json` in the data folder. Missing keys keep their defaul
 | `session_guidance` | true | Add the session notice |
 | `log_level` | `info` | `error`, `warn`, `info` or `debug` |
 | `port` | 47830 | Server port for `http` mode |
+| `repos` | `{}` | Per-repo overrides (section 9.1) |
 
 Example:
 
 ```json
 {"read_threshold_tokens": 6000, "search_max_lines_per_file": 20, "log_level": "info"}
 ```
+
+### 9.1 Per-repo overrides
+
+Different repos need different settings. For example, read shaping can pay off in a repo with large generated files and lose tokens in another one. Use `repos` to change settings for one repo:
+
+```json
+{
+  "shadow": ["search"],
+  "repos": {
+    "D:/Work/big-app": { "read_shaping": true, "read_threshold_tokens": 4000 },
+    "D:/Work/big-app/docs": { "shadow": ["read"] },
+    "D:/Work/small-lib": {}
+  }
+}
+```
+
+- The key is the repo's root folder. Case and `/` or `\` do not matter.
+- A tool call uses the override whose root is its working folder or the closest folder above it. In the example, `D:/Work/big-app/docs` wins over `D:/Work/big-app` for calls in `docs`.
+- An override accepts these keys: `read_shaping`, `shadow`, `read_threshold_tokens`, `head_lines`, `search_threshold_tokens`, `search_max_lines_per_file` and `search_min_parsed`. Keys that you leave out keep the global value.
+- Events from a repo with an override carry the override's key. `aaes report` then shows that repo in its own table (section 6.6). An empty override (`{}`) changes nothing, so use it to get the per-repo numbers only.
+- `aaes replay` uses the same overrides, so you can see the effect of a threshold before you change it in the live hook.
+
+The steps to tune a repo:
+
+1. Run `aaes replay` and look at the top projects. They show where a family would save the most.
+2. Add an override for the repo with that family in shadow mode, for example `{"shadow": ["read"]}`.
+3. After some sessions, read the repo's advice in `aaes report`.
+4. If the advice says "try it on", turn the family on for that repo only (for example `"read_shaping": true`, without `shadow`).
+5. Keep it on only while the advice says "keep". If it says "turn off or raise the threshold", do one of those.
 
 The server reads `config.json` when it starts. After a change, restart it: `aaes serve --stop`. The next Claude Code session starts it again.
 
