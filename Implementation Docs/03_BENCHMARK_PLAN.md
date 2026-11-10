@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v0.5
+# Benchmark and Evaluation Protocol — AAES v0.6
 
 ## 0. Change log
 | Version | Date | Change |
@@ -8,6 +8,7 @@
 | 0.3 | 2026-11-03 | Phase 0 gate fixed at **≥20% cost-weighted** and implemented as `aaes mine`. Results reported in both billing views (ADR-019). Benchmark corpus split into **public** (OSS repos, reproducible) and **private** (team repos, local only) per ADR-020. Added initial-context overhead metric. |
 | 0.4 | 2026-11-03 | M1 evaluation focuses on read and search shaping: new stratum 13 (read-then-edit on large files), rebound and Edit-failure metrics and gates. Phase 0 result: GO (calibrated); calibration validated against `count_tokens` (`tools/calibration-check`): within ~5%. |
 | 0.5 | 2026-11-04 | Read-rebound gate adds ≤ 1 follow-up call per shaped result (MET-015). Early local dogfooding suggests agents fetch most of smaller shaped files anyway, so the read threshold is being evaluated at a higher value (details in the private findings). |
+| 0.6 | 2026-11-10 | Added the **M2 pilot protocol**: a small, runnable first study (headless runs, arms A / A′ / C / C-shadow, public corpus, pre-registered metrics, pilot to estimate ψ before the powered study). Cache-aware result cost now uses the same formula as `aaes report` and `aaes mine` (`k` later requests until compaction). Shadow mode added as a control arm. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -81,7 +82,7 @@ Paired approximation: n ≈ (z₁₋α + z₁₋β)² · ψ / δ², where ψ is 
 Direct tool-result reduction = 1 - sum(delivered tool tokens)/sum(raw tool tokens), for intercepted outputs only. Report un-intercepted coverage separately. Label Claude counts as calibrated estimates (MET-001).
 Workflow token reduction = 1 - total optimized provider tokens / total baseline provider tokens, based on comparable matched task runs.
 Net cash saving = provider baseline cost - provider optimized cost - attributable local compute/ops cost. (API mode only; subscription mode reports cost-weighted units as a labelled usage proxy, ADR-019.)
-**Cache-aware result cost** ≈ T · (p_cache_write + k · p_cache_read), where k = turns the result stays in context.
+**Cache-aware result cost** ≈ T · (p_cache_write + (k − 1) · p_cache_read), where k = model requests whose prompt carries the result (until compaction or session end). `aaes mine` and `aaes report` use this formula with weights relative to the uncached input price (write ×1.25 or ×2, read ×0.1).
 Cost per successful task = total cost across runs / number of successful runs; include failures and rework cost.
 Token-per-successful-task = total provider tokens across runs / successful runs; include failures.
 Retrieval usefulness = correct/evidence-backed retrieved facts divided by retrieved facts; recall measured against known relevant evidence.
@@ -107,6 +108,52 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
 | Recovery | Authorized full-result retrieval works; foreign retrieval denied; expired handles report "expired" | Block on violation |
 | Learning | Candidate is no worse on security/fidelity/outcomes and improves predefined efficiency measure with enough samples | Promote; else reject |
+
+## M2 pilot protocol (runnable)
+
+The full study above needs hundreds of paired tasks. The pilot is the first, small step. It checks that the harness works end to end, gives first effect sizes, and estimates the discordant-pair share ψ for the sample-size table. The pilot does **not** support a noninferiority claim.
+
+### Arms
+| Arm | Setup | Purpose |
+|---|---|---|
+| A | Claude Code, no AAES hooks | Baseline |
+| A′ | A + the prompt-only instructions above in the task repo's `CLAUDE.md` | What instructions alone capture |
+| C | AAES installed, default config (search shaping on, read shaping off) | Treatment |
+| C-shadow | AAES installed, `"shadow": ["read", "search"]` | Hook overhead and would-be saving with identical agent input as A |
+
+C-shadow gives the agent the same tool output as A. A difference in task success between A and C-shadow means harness noise, not AAES. A difference in wall-clock time is the hook overhead.
+
+### Tasks
+- **Corpus:** 20–30 fix-commit-replay tasks from the public corpus (pinned OSS repos in `tests/fixtures/PROVENANCE.md`), split across strata 1, 2, 6 and 13. Each task has an issue text, a reverted fix, and a test command as the oracle.
+- **Selection rule (pre-registered):** a task qualifies when the oracle test fails on the reverted snapshot and passes on the fix commit, the fix touches 1–5 files, and the repo builds in under 5 minutes.
+- Private repos (ADR-020) may be run the same way, but their results stay in the private findings.
+
+### Run procedure
+1. For each task and arm, create a fresh worktree of the reverted snapshot under the build folder (never in the repo folder). Give each run its own `CLAUDE_CONFIG_DIR` (so the arm's hooks and `CLAUDE.md` apply only to that run) and its own `AAES_HOME`, so no state crosses runs. Install the C and C-shadow hooks with `aaes init --mode command --settings <run config dir>/settings.json`: command mode reads `AAES_HOME` per call, while a shared http server would use one home for all runs.
+2. Run the agent headless (`claude -p "<issue text>"`) with a pinned Claude Code version and model, the same permission settings in every arm, and a turn and time limit. Record the session id.
+3. After the run, execute the oracle test in the worktree. Record pass or fail, and the diff size.
+4. Collect the numbers: the session transcript (usage per request, compactions) and, for C and C-shadow, the run's `aaes report --json`.
+5. Randomize the arm order per task. Run 3 replications per task and arm.
+
+### Pre-registered metrics
+| Metric | Source |
+|---|---|
+| Task success (oracle passes) | Oracle test |
+| Cost-weighted input per task (uncached ×1, write ×1.25/×2, read ×0.1) | Transcript usage fields |
+| Cost per successful task | Above, divided by successful runs |
+| Tool calls, follow-up calls, `aaes show` calls | Transcript; `aaes report` |
+| Direct reduction on shaped families; cache-aware saving | `aaes report` (C); shadow section (C-shadow) |
+| Edit failure rate (MET-016) | `aaes report` |
+| Compactions per task; wall-clock time | Transcript |
+
+### Analysis
+- Report each metric per arm with a 95% interval over tasks (bootstrap over tasks, replications averaged within a task).
+- Primary pilot outputs: ψ (share of tasks where A and C disagree on success), the C vs A difference in cost-weighted input per task, and the C-shadow vs A difference in wall-clock time.
+- Use ψ in the sample-size formula to size the powered study.
+
+### Stop rules
+- Stop and fix before the powered study if: any fidelity failure in the golden suite; a hook error in any C run (`aaes logs --errors`); a task where C fails and both A and C-shadow pass in every replication (inspect the transcript first).
+- Publish the pilot result, positive or negative, with the full arm configuration.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
