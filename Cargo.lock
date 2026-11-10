@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "aaes-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aaes-runtime",
  "aaes-transcripts",
@@ -17,14 +17,14 @@ dependencies = [
 
 [[package]]
 name = "aaes-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "aaes-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aaes-core",
  "chacha20poly1305",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "aaes-transcripts"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aaes-core",
  "rayon",
