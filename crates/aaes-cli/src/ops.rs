@@ -349,6 +349,10 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                         "net_units": f.net_units().round(), "avg_later_requests": f.avg_later(),
                         "matched_events": f.cost_n, "unmatched_events": f.cost_unmatched,
                     },
+                    "shadow": {
+                        "results": f.shadow_n, "would_save_bytes": f.shadow_saved,
+                        "would_save_units": f.shadow_units.round(),
+                    },
                 }))).collect::<serde_json::Map<String, Value>>(),
                 "cost_weights": aaes_transcripts::analyze::Weights::default(),
                 "edits": edits.json(),
@@ -406,6 +410,7 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
             );
         }
         print_cost(&fam);
+        print_shadow(&fam, bpt);
     }
     if idx.len() > 1 || idx.contains_key("codegraph") {
         println!(
@@ -453,6 +458,26 @@ fn print_cost(fam: &BTreeMap<&'static str, Family>) {
             f.avg_later()
                 .map_or("-".to_owned(), |a| format!("{a:.1} avg")),
             format!("{}/{}", f.cost_n, f.cost_n + f.cost_unmatched),
+        );
+    }
+}
+
+/// Shadow-mode families: what shaping would have saved. The agent got the raw output, so there
+/// are no follow-ups to subtract; the numbers are an upper bound for the real saving.
+fn print_shadow(fam: &BTreeMap<&'static str, Family>, bpt: f64) {
+    if fam.values().all(|f| f.shadow_n == 0) {
+        return;
+    }
+    println!(
+        "\nShadow mode (shaped but not delivered; upper bound, follow-ups not measured)\n{:<8} {:>9} {:>16} {:>18}",
+        "family", "results", "would save tok", "cost-weighted"
+    );
+    for (k, f) in fam.iter().filter(|(_, f)| f.shadow_n > 0) {
+        println!(
+            "{k:<8} {:>9} {:>16} {:>18.0}",
+            f.shadow_n,
+            (f.shadow_saved as f64 / bpt).round(),
+            f.shadow_units
         );
     }
 }
@@ -605,6 +630,11 @@ struct Family {
     /// Sum of later requests over matched shaped results (for the average).
     later_sum: u64,
     later_n: u64,
+    /// Shadow mode: results shaped but not delivered, the bytes they would have saved, and the
+    /// same in cost-weighted tokens (transcript-matched events only).
+    shadow_n: u64,
+    shadow_saved: u64,
+    shadow_units: f64,
 }
 
 /// Transcript timelines of one AAES session, loaded on first use, one per context (`main` or a
@@ -662,11 +692,21 @@ impl Timelines {
     fn add_cost(&mut self, v: &Value, fam: &mut BTreeMap<&'static str, Family>, bpt: f64) {
         let shaped = v["action"] == "shaped";
         let rebound = v["rebound"].as_bool() == Some(true);
+        let raw = v["raw_bytes"].as_u64().unwrap_or(0);
+        let ts = v["ts"].as_u64().unwrap_or(0);
+        if v["action"] == "shadow" {
+            let would = raw.saturating_sub(v["shadow_bytes"].as_u64().unwrap_or(raw));
+            let ctx = v["ctx"].as_str().unwrap_or("main").to_owned();
+            let w = self.timeline(&ctx).map(|t| t.weight_at(ts));
+            let f = fam.entry(family_of(v["kind"].as_str())).or_default();
+            f.shadow_n += 1;
+            f.shadow_saved += would;
+            f.shadow_units += w.unwrap_or(0.0) * would as f64 / bpt;
+            return;
+        }
         if !shaped && !rebound {
             return;
         }
-        let raw = v["raw_bytes"].as_u64().unwrap_or(0);
-        let ts = v["ts"].as_u64().unwrap_or(0);
         let f = fam.entry(family_of(v["kind"].as_str())).or_default();
         let Some(t) = self.timeline(v["ctx"].as_str().unwrap_or("main")) else {
             f.cost_unmatched += 1;

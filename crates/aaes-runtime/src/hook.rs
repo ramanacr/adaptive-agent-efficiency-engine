@@ -260,6 +260,40 @@ impl Ctx<'_> {
         rebound: bool,
         detail: Value,
     ) {
+        self.log_event(
+            kind, action, reason, raw, delivered, key, rebound, None, detail,
+        );
+    }
+
+    /// Shadow mode: the agent gets the raw output; `would` is the size the shaped output had.
+    /// Shadow events never count as shaped, so they set no follow-up state.
+    fn log_shadow(&self, kind: &str, raw: usize, would: usize, key: Option<&str>, detail: Value) {
+        self.log_event(
+            kind,
+            Action::Shadow,
+            "shadow",
+            raw,
+            raw,
+            key,
+            false,
+            Some(would),
+            detail,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn log_event(
+        &self,
+        kind: &str,
+        action: Action,
+        reason: &str,
+        raw: usize,
+        delivered: usize,
+        key: Option<&str>,
+        rebound: bool,
+        shadow_bytes: Option<usize>,
+        detail: Value,
+    ) {
         let dur_us = self.t0.elapsed().as_micros() as u64;
         events::append(
             self.dir,
@@ -275,6 +309,7 @@ impl Ctx<'_> {
                 rebound,
                 dur_us,
                 codegraph: self.codegraph,
+                shadow_bytes,
             },
         );
         let mut rec = json!({
@@ -300,6 +335,9 @@ impl Ctx<'_> {
         }
         if let Some(c) = self.codegraph {
             rec["codegraph"] = json!(c);
+        }
+        if let Some(b) = shadow_bytes {
+            rec["shadow_bytes"] = json!(b);
         }
         if let (Some(r), Value::Object(d)) = (rec.as_object_mut(), detail) {
             r.extend(d);
@@ -426,6 +464,20 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                     d,
                 );
                 return json!({});
+            }
+            if rt.cfg.shadow("read") {
+                if let Some(r) = shape::shape_read(path, content, cfg) {
+                    let total = total_lines.unwrap_or(r.total_lines);
+                    let context = shape::read_context(display_path(path, cwd), &r, total);
+                    c.log_shadow(
+                        "read",
+                        content.len(),
+                        r.head.len() + context.len(),
+                        Some(&key),
+                        json!({ "ext": ext(path), "total_lines": total, "est_tokens": r.raw_tokens }),
+                    );
+                    return json!({});
+                }
             }
             if !rt.cfg.read_shaping {
                 c.log(
@@ -582,6 +634,15 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
             if let Some(target) = shape::shell_read_target(cmd) {
                 let key = read_key(&target, cwd);
                 let base = json!({ "cmd": cmd_shape, "ext": ext(&target) });
+                if rt.cfg.shadow("read") {
+                    if let Some(r) = shape::shape_read(&target, stdout, cfg) {
+                        let text = shape::shell_read_text(display_path(&target, cwd), &r);
+                        let mut d = base;
+                        d["total_lines"] = json!(r.total_lines);
+                        c.log_shadow("shell_read", stdout.len(), text.len(), Some(&key), d);
+                        return json!({});
+                    }
+                }
                 if !rt.cfg.read_shaping {
                     c.log(
                         "shell_read",
@@ -717,6 +778,14 @@ fn search(
             return json!({});
         }
     };
+    if c.rt.cfg.shadow("search") {
+        // Nothing is stored: the agent has every line, so the handle in the shaped text is unused.
+        detail["matches"] = json!(s.matches);
+        detail["files"] = json!(s.files);
+        detail["omitted_lines"] = json!(s.omitted_lines);
+        c.log_shadow("search", raw.len(), s.text.len(), None, detail);
+        return json!({});
+    }
     let saved = if s.omitted_lines > 0 {
         store::save(&c.rt.home, session, &handle, raw)
     } else {
@@ -854,6 +923,77 @@ mod tests {
             &read_event("s2", None, "C:\\repo\\src\\big.ts", &src, false),
         );
         assert!(out["hookSpecificOutput"]["updatedToolOutput"].is_object());
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn shadow_mode_logs_the_shaped_size_but_delivers_raw() {
+        let home = std::env::temp_dir().join(format!(
+            "aaes-hook-{}-{}",
+            std::process::id(),
+            store::new_handle()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        // Unknown families are ignored; shadow wins over read_shaping.
+        std::fs::write(
+            home.join("config.json"),
+            r#"{"read_shaping": true, "shadow": ["read", "search", "build"]}"#,
+        )
+        .unwrap();
+        let rt = Runtime::new(home.clone());
+        assert_eq!(rt.cfg.shadow, ["read", "search"]);
+        let src = big_ts();
+        let path = "C:\\repo\\src\\big.ts";
+        for _ in 0..2 {
+            assert_eq!(
+                handle(&rt, &read_event("sh", None, path, &src, false)),
+                json!({})
+            );
+        }
+        let shell = json!({
+            "hook_event_name": "PostToolUse", "session_id": "sh", "cwd": "C:\\repo",
+            "tool_name": "Bash", "tool_input": { "command": "cat src/big.ts" },
+            "tool_response": { "stdout": src, "stderr": "", "interrupted": false }
+        });
+        assert_eq!(handle(&rt, &shell), json!({}));
+        let mut content = String::new();
+        for l in 0..120 {
+            content.push_str(&format!(
+                "C:\\repo\\src\\F{}\\H.cs:{}:    await _mediator.Send(new Command(request.Id), ct);\n",
+                l % 3,
+                l + 1
+            ));
+        }
+        let grep = json!({
+            "hook_event_name": "PostToolUse", "session_id": "sh", "cwd": "C:\\repo",
+            "tool_name": "Grep", "tool_input": {"pattern": "Send", "output_mode": "content"},
+            "tool_response": {"mode": "content", "content": content, "numLines": 120, "filenames": [], "numFiles": 3}
+        });
+        assert_eq!(handle(&rt, &grep), json!({}));
+
+        let log =
+            std::fs::read_to_string(paths::session_dir(&home, "sh").join("events.jsonl")).unwrap();
+        let events: Vec<Value> = log
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(events.len(), 4);
+        for e in &events {
+            assert_eq!(e["action"], "shadow", "{e}");
+            assert_eq!(e["raw_bytes"], e["delivered_bytes"], "agent got raw: {e}");
+            assert!(e["shadow_bytes"].as_u64().unwrap() < e["raw_bytes"].as_u64().unwrap());
+            assert_eq!(e["rebound"], false, "shadow sets no follow-up state: {e}");
+        }
+        let kinds: Vec<&str> = events.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["read", "read", "shell_read", "search"]);
+        // Nothing was stored: the agent saw every line.
+        assert!(
+            !paths::session_dir(&home, "sh").join("artifacts").exists()
+                || std::fs::read_dir(paths::session_dir(&home, "sh").join("artifacts"))
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
         let _ = std::fs::remove_dir_all(home);
     }
 

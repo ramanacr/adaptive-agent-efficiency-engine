@@ -20,6 +20,10 @@ pub struct Config {
     /// Shape large whole-file reads (Read tool and shell `cat`-style reads). Off by default:
     /// the M1 dogfood trial measured a net token loss, because agents read the rest of the file.
     pub read_shaping: bool,
+    /// Shaping families in shadow mode (`read`, `search`): AAES computes the shaped output and
+    /// logs its size, but the agent gets the raw output. For trying a renderer on real traffic
+    /// without risk. Shadow mode wins over `read_shaping`.
+    pub shadow: Vec<String>,
 }
 
 impl Default for Config {
@@ -32,11 +36,20 @@ impl Default for Config {
             session_guidance: true,
             followup_window_secs: 300,
             read_shaping: false,
+            shadow: Vec::new(),
         }
     }
 }
 
+/// Families that `shadow` accepts.
+pub const SHADOW_FAMILIES: &[&str] = &["read", "search"];
+
 impl Config {
+    /// The shaping family is in shadow mode.
+    pub fn shadow(&self, family: &str) -> bool {
+        self.shadow.iter().any(|f| f == family)
+    }
+
     /// Load `config.json` from the AAES home; missing keys keep their defaults.
     pub fn load(home: &Path) -> Self {
         let mut c = Self::default();
@@ -77,6 +90,14 @@ impl Config {
         }
         if let Some(b) = v["read_shaping"].as_bool() {
             c.read_shaping = b;
+        }
+        if let Some(a) = v["shadow"].as_array() {
+            c.shadow = a
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|s| SHADOW_FAMILIES.contains(s))
+                .map(str::to_owned)
+                .collect();
         }
         if let Some(b) = v["session_guidance"].as_bool() {
             c.session_guidance = b;

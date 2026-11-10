@@ -14,6 +14,8 @@ pub enum Action {
     PassThrough,
     /// Second whole read of the same file in the same context ("ask twice, get full").
     FullOnRepeat,
+    /// Shadow mode: AAES computed the shaped output but delivered the raw output.
+    Shadow,
 }
 
 impl Action {
@@ -22,6 +24,7 @@ impl Action {
             Action::Shaped => "shaped",
             Action::PassThrough => "pass",
             Action::FullOnRepeat => "full_on_repeat",
+            Action::Shadow => "shadow",
         }
     }
 }
@@ -42,6 +45,8 @@ pub struct Event<'a> {
     /// The working folder is inside a CodeGraph-indexed repo (`.codegraph/codegraph.db` at or above it).
     /// Agents told to prefer CodeGraph there make fewer shapeable calls. `None`: no cwd.
     pub codegraph: Option<bool>,
+    /// Shadow mode only: bytes the shaped output would have had.
+    pub shadow_bytes: Option<usize>,
 }
 
 pub fn fnv_hex(s: &str) -> String {
@@ -72,6 +77,9 @@ pub fn append(session_dir: &Path, e: &Event) {
     });
     if let Some(c) = e.codegraph {
         rec["codegraph"] = json!(c);
+    }
+    if let Some(b) = e.shadow_bytes {
+        rec["shadow_bytes"] = json!(b);
     }
     if paths::create_private_dir(session_dir).is_err() {
         return;

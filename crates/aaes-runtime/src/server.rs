@@ -186,6 +186,7 @@ pub fn serve(rt: Arc<Runtime>, port: u16) -> std::io::Result<()> {
             "retention_hours": rt.cfg.retention_hours,
             "bytes_per_token": rt.cfg.shape.bytes_per_token,
             "read_shaping": rt.cfg.read_shaping,
+            "shadow": rt.cfg.shadow,
             "read_threshold_tokens": rt.cfg.shape.read_threshold_tokens,
             "search_threshold_tokens": rt.cfg.shape.search_threshold_tokens,
             "logs_pruned": pruned,

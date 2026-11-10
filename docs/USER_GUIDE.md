@@ -87,6 +87,16 @@ Output of a search in one file has no paths (`12:text` lines, from the Grep tool
 
 All other tool results pass through unchanged. AAES never changes tool input, and never changes Edit, Write or other tool results.
 
+### 3.4 Shadow mode
+
+Shadow mode lets you measure a shaping family on your own work without any risk. For each family in the `shadow` list (`"read"`, `"search"`), AAES computes the shaped output and records its size, but the agent gets the original output. The event has the action `shadow`, and `aaes report` shows a "Shadow mode" section with the tokens that shaping would have saved, also cost-weighted (section 6.3).
+
+```json
+{"shadow": ["read"]}
+```
+
+Shadow mode wins over `read_shaping`. The agent sees everything, so there are no follow-ups: the shadow saving is an upper bound. To measure follow-ups, turn the family on for real.
+
 ## 4. How the agent learns about AAES
 
 The agent does not call AAES directly. AAES communicates only through text in the agent's context:
@@ -127,6 +137,7 @@ A handle is a 128-bit random value. It is valid until the session's data is dele
 | `shaped` | AAES replaced the output with the shorter version. The saving is `raw tok` minus `delivered`. |
 | `pass` | AAES delivered the output unchanged. |
 | `full_on_repeat` | The agent read the same whole file a second time in the same context, and AAES delivered it in full. |
+| `shadow` | Shadow mode (section 3.4): AAES computed the shaped output but delivered the original. |
 
 The diagnostic log (section 7) records the reason for each `pass`:
 
@@ -245,6 +256,7 @@ Put an optional `config.json` in the data folder. Missing keys keep their defaul
 | Key | Default | Meaning |
 |---|---|---|
 | `read_shaping` | false | Shape large whole-file reads (section 3.1) |
+| `shadow` | `[]` | Families in shadow mode: `"read"`, `"search"` (section 3.4) |
 | `read_threshold_tokens` | 2000 | Shape whole-file reads above this size (when `read_shaping` is on) |
 | `head_lines` | 40 | Verbatim lines at the start of a shaped read |
 | `search_threshold_tokens` | 1500 | Shape search results above this size |

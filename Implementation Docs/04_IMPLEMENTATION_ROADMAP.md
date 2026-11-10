@@ -90,6 +90,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - Cache-aware economics; re-run rate; occupancy; compactions; footer overhead.
   - ✅ First part (2026-11-10): `aaes report` weights each family's saving and follow-ups by cache price, from the number of later requests (until compaction) in the session transcript. Units: uncached-input-equivalent tokens, same weights as `aaes mine`.
 - Tune per-family policies (versioned config) via offline replay.
+  - ✅ Shadow mode (2026-11-10): `"shadow": ["read", "search"]` in `config.json` computes the shaped output and logs its size, but delivers the raw output; `aaes report` shows the would-be saving (an upper bound, no follow-ups). New renderers (M3) start in shadow mode before they are turned on.
 
 **Exit**: net-positive on the representative workload *and* a material gain over A′, or a documented re-scope.
 
