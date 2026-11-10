@@ -299,3 +299,34 @@ The server reads `config.json` when it starts. After a change, restart it: `aaes
 ## 12. Measure first: `aaes mine`
 
 `aaes mine` reads your existing Claude Code and Codex transcripts (read-only). It reports where tool-output tokens go, so you can see if AAES is worth trying. The report ends with a web-search section (MET-017): how many `WebSearch` calls you made, how many were duplicates, how often searches came in bursts, and how often the provider's rate limit was hit. It shows counts only, never query text. See the [README](../README.md#quick-start-measure-your-own-sessions-m-1) and `aaes mine --help`.
+
+## 13. Replay the shapers on your history: `aaes replay`
+
+`aaes replay` runs the current shapers over the tool results in your past Claude Code transcripts (read-only). It shows what each family would have saved. You do not need hooks installed, and nothing is changed or stored.
+
+Claude Code stores each tool result in the transcript in the same form that the hook gets (`toolUseResult`). Replay sends it through the same decisions as the hook:
+
+- A ranged read (`offset`/`limit`) passes through.
+- A second whole read of the same file in one context passes through in full. This rule resets at compaction.
+- Shell output that Claude Code saved to a file (`<persisted-output>`) passes through.
+- The size thresholds are the same as in the hook.
+
+```
+aaes replay                        # thresholds from config.json
+aaes replay --defaults             # built-in thresholds
+aaes replay --since 2026-10-01 --project my-repo
+aaes replay --json
+```
+
+The report has three parts:
+
+1. **Families.** For `read`, `shell_read` and `search`, the report shows these columns:
+   - `results`: the results replay looked at.
+   - `would shape`: the results that the shaper would change.
+   - `raw tok` and `saved tok`: the raw tokens and the saved tokens.
+   - `cost-weighted`: the saving weighted by cache price, as in section 6.3.
+   - `later req`: the average number of later requests that resend each shaped result.
+2. **Pass-through reasons**: `small`, `repeat`, `ranged`, `unparsed`, `low saving`, `host truncated` and `shaped live`. `shaped live` counts results that AAES already shaped when they happened. The transcript holds only the shaped text, so their savings are in `aaes report`, not here.
+3. **Top projects** by cost-weighted saving. Use this table to find the repos where a family is worth turning on.
+
+The figures are an **upper bound**. In the history, the agent saw the full output, so the follow-up reads that a shaped result can cause are not counted. Compare with the follow-up figures in `aaes report`, or try the family in shadow mode first (section 3.4). Replay reads Claude Code transcripts only, not Codex transcripts.

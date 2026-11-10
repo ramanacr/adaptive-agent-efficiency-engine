@@ -1,6 +1,7 @@
 mod install;
 mod mine;
 mod ops;
+mod replay;
 
 use std::path::PathBuf;
 
@@ -27,6 +28,9 @@ enum Cmd {
     /// Analyse local Claude Code / Codex transcripts (read-only) and report where tool-output
     /// tokens go (M-1). Output contains aggregate numbers and command-family names only.
     Mine(mine::MineArgs),
+    /// Run the current shapers over past Claude Code tool results (read-only) and report what
+    /// each family would have saved, cost-weighted. An upper bound: follow-ups are not counted.
+    Replay(replay::ReplayArgs),
     /// Install AAES hooks into Claude Code settings (backs the file up first).
     Init {
         /// `http` (resident server; default on Windows) or `command` (process per call).
@@ -108,6 +112,7 @@ enum Cmd {
 fn main() -> Result<()> {
     match Cli::parse().cmd {
         Cmd::Mine(a) => mine::run(a),
+        Cmd::Replay(a) => replay::run(a),
         Cmd::Init {
             mode,
             settings,

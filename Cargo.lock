@@ -6,6 +6,7 @@ version = 4
 name = "aaes-cli"
 version = "0.1.1"
 dependencies = [
+ "aaes-core",
  "aaes-runtime",
  "aaes-transcripts",
  "anyhow",

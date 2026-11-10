@@ -13,6 +13,7 @@ name = "aaes"
 path = "src/main.rs"
 
 [dependencies]
+aaes-core.workspace = true
 aaes-runtime.workspace = true
 aaes-transcripts.workspace = true
 anyhow.workspace = true
