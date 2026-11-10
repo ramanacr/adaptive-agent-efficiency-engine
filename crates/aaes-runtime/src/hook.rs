@@ -553,6 +553,32 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 return json!({});
             }
             let cmd_shape = aaes_core::command::shape(cmd);
+            // Output too large for the host: Claude Code saved the full output to a file and
+            // passes the hook only a preview. Totals computed from the preview would be wrong,
+            // and a replacement would hide the host's pointer to the full file. Pass through.
+            if resp["persistedOutputPath"]
+                .as_str()
+                .is_some_and(|p| !p.is_empty())
+            {
+                let kind = if shape::shell_read_target(cmd).is_some() {
+                    "shell_read"
+                } else if shape::is_shell_search(cmd) {
+                    "search"
+                } else {
+                    "other"
+                };
+                c.log(
+                    kind,
+                    Action::PassThrough,
+                    "host_truncated",
+                    stdout.len(),
+                    stdout.len(),
+                    None,
+                    false,
+                    json!({ "cmd": cmd_shape }),
+                );
+                return json!({});
+            }
             if let Some(target) = shape::shell_read_target(cmd) {
                 let key = read_key(&target, cwd);
                 let base = json!({ "cmd": cmd_shape, "ext": ext(&target) });
@@ -1211,6 +1237,39 @@ mod tests {
                 assert!(art.exists(), "{label}: {h} stored under {session}");
             }
         }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Claude Code keeps output that is too large in a file and passes the hook only a preview
+    /// (`persistedOutputPath`). Shaping the preview would report wrong totals: pass through.
+    #[test]
+    fn host_truncated_shell_output_passes_through() {
+        let (rt, home) = rt();
+        let mut out = String::new();
+        for l in 0..400 {
+            out.push_str(&format!(
+                "src/Feature{}/Handler.cs:{}:    await _mediator.Send(new Command(request.Id), token);\n",
+                l % 8,
+                l + 1
+            ));
+        }
+        let mut ev = json!({
+            "hook_event_name": "PostToolUse", "session_id": "trunc", "cwd": "C:\\repo",
+            "tool_name": "Bash", "tool_input": { "command": "grep -rn 'Send(' src ." },
+            "tool_response": { "stdout": out, "stderr": "", "interrupted": false, "isImage": false,
+                "persistedOutputPath": "C:\\Users\\x\\.claude\\tool-results\\b1.txt", "persistedOutputSize": 61000 }
+        });
+        assert_eq!(handle(&rt, &ev), json!({}));
+        let events =
+            std::fs::read_to_string(paths::session_dir(&home, "trunc").join("events.jsonl"))
+                .unwrap();
+        assert!(events.contains("host_truncated"), "{events}");
+        // Without the marker the same output is shaped.
+        ev["tool_response"]
+            .as_object_mut()
+            .unwrap()
+            .remove("persistedOutputPath");
+        assert!(handle(&rt, &ev)["hookSpecificOutput"]["updatedToolOutput"].is_object());
         let _ = std::fs::remove_dir_all(&home);
     }
 

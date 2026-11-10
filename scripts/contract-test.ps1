@@ -138,7 +138,7 @@ $prompts = @{
     C3 = "Automated test. Use the Grep tool once with pattern 'Send\(' , path src, output_mode content and -n true. Then reply with ONLY a JSON object {`"matches`": <total number of matching lines>, `"files`": <number of files with matches>}, based on the tool output."
     C4 = "Automated test. Use the Agent tool to launch a general-purpose subagent with this exact task: 'Read BigService.cs with the Read tool (whole file, no offset or limit) and, using only what that Read returned, report the line range of the method ComputeTotal123 as start-end.' Then reply with ONLY the subagent's answer."
     C5 = 'Automated test. Use the Read tool on each of these files, one call per file: f01.txt f02.txt f03.txt f04.txt f05.txt f06.txt f07.txt f08.txt f09.txt f10.txt f11.txt f12.txt f13.txt f14.txt f15.txt. Issue them sequentially. Then reply DONE.'
-    C6 = "Automated test. Use the Bash tool once to run exactly: grep -rn 'Send(' src . Then reply with ONLY a JSON object {`"matches`": <total number of matching lines>, `"files`": <number of files with matches>}, based on the tool output."
+    C6 = "Automated test. Use the Bash tool once to run exactly this command (backticks not included): ``grep -rn 'Send(' src`` and then reply with ONLY a JSON object {`"matches`": <total number of matching lines>, `"files`": <number of files with matches>}, based on the tool output."
 }
 $tools = @{ C1 = 'Read'; C2 = 'Read,Edit'; C3 = 'Grep'; C4 = 'Read,Agent,Task'; C5 = 'Read'; C6 = 'Bash(grep:*)' }
 
