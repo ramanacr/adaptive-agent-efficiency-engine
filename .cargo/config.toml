@@ -1,0 +1,4 @@
+# Link the C runtime statically on Windows (MSVC), so `aaes.exe` runs on a clean Windows
+# without the Visual C++ Redistributable (found by the clean-machine install test, FUN-023).
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -85,7 +85,13 @@ try {
     New-Item -ItemType Directory -Force $InstallDir | Out-Null
     Expand-Archive $zip -DestinationPath $tmp -Force
     Copy-Item (Join-Path $tmp 'aaes.exe') $exe -Force
-    Write-Host "Installed $(& $exe --version) to $exe"
+    # Check that the binary starts. A missing system DLL makes Windows fail the start without
+    # any output, so test the exit code, not only the text.
+    $ver = (& $exe --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $ver) {
+        throw "aaes.exe was copied to $exe but does not start (exit code $LASTEXITCODE). Please report this at https://github.com/ramanacr/adaptive-agent-efficiency-engine/issues"
+    }
+    Write-Host "Installed $ver to $exe"
 
     if (-not $NoPath) {
         $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
