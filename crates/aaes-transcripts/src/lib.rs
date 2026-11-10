@@ -10,6 +10,7 @@ pub mod codex;
 pub mod discover;
 pub mod edits;
 pub mod model;
+pub mod occupancy;
 pub mod probe;
 pub mod report;
 pub mod websearch;

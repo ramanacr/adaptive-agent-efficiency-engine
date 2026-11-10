@@ -274,11 +274,13 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
             // session, for MET-016.
             let mut shaped: Vec<(u64, String)> = Vec::new();
             let mut first_ts = u64::MAX;
+            let mut timelines = Timelines::new(claude_root.as_deref(), e.file_name().to_str());
             for line in text.lines() {
                 let Ok(v) = serde_json::from_str::<Value>(line) else {
                     continue;
                 };
                 first_ts = first_ts.min(v["ts"].as_u64().unwrap_or(u64::MAX));
+                timelines.add_cost(&v, &mut fam, bpt);
                 if v["action"] == "shaped" && family_of(v["kind"].as_str()) == "read" {
                     if let Some(k) = v["key"].as_str() {
                         shaped.push((v["ts"].as_u64().unwrap_or(0), k.to_owned()));
@@ -342,7 +344,13 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                     "net_tokens_est": f.net_tokens(bpt),
                     "follow_ups_per_shaped": f.follow_ups_per_shaped(),
                     "ok": f.ok(bpt),
+                    "cost_weighted": {
+                        "saved_units": f.saved_units.round(), "follow_up_units": f.follow_units.round(),
+                        "net_units": f.net_units().round(), "avg_later_requests": f.avg_later(),
+                        "matched_events": f.cost_n, "unmatched_events": f.cost_unmatched,
+                    },
                 }))).collect::<serde_json::Map<String, Value>>(),
+                "cost_weights": aaes_transcripts::analyze::Weights::default(),
                 "edits": edits.json(),
                 "by_index": idx.iter().map(|(k, f)| (k.to_string(), serde_json::json!({
                     "calls": f.calls, "shaped": f.shaped_n, "saved_bytes": f.saved,
@@ -397,6 +405,7 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
                 }
             );
         }
+        print_cost(&fam);
     }
     if idx.len() > 1 || idx.contains_key("codegraph") {
         println!(
@@ -417,6 +426,35 @@ pub fn report_cmd(json_out: bool) -> Result<()> {
     }
     edits.print();
     Ok(())
+}
+
+/// Cache-aware cost per family. Units are uncached-input-equivalent tokens: a saved token counts
+/// once at the cache-write price and then at the cache-read price for every later request that
+/// would have carried it.
+fn print_cost(fam: &BTreeMap<&'static str, Family>) {
+    if fam.values().all(|f| f.cost_n == 0) {
+        return;
+    }
+    let w = aaes_transcripts::analyze::Weights::default();
+    println!(
+        "\nCache-aware cost (uncached-input-equivalent tokens; write x{} / x{}, read x{}, from transcripts)",
+        w.cache_write_5m, w.cache_write_1h, w.cache_read
+    );
+    println!(
+        "{:<8} {:>12} {:>14} {:>12} {:>14} {:>9}",
+        "family", "saved", "follow-ups", "net", "later requests", "matched"
+    );
+    for (k, f) in fam.iter().filter(|(_, f)| f.cost_n + f.cost_unmatched > 0) {
+        println!(
+            "{k:<8} {:>12.0} {:>14.0} {:>12.0} {:>14} {:>9}",
+            f.saved_units,
+            f.follow_units,
+            f.net_units(),
+            f.avg_later()
+                .map_or("-".to_owned(), |a| format!("{a:.1} avg")),
+            format!("{}/{}", f.cost_n, f.cost_n + f.cost_unmatched),
+        );
+    }
 }
 
 /// Report bucket for the CodeGraph flag of an event.
@@ -556,9 +594,108 @@ struct Family {
     saved: u64,
     follow_n: u64,
     follow_bytes: u64,
+    /// Cache-aware cost: shaped and follow-up events matched to a transcript timeline.
+    cost_n: u64,
+    /// Events of [`Family::cost_n`] (shaped or follow-up) that had no transcript to match.
+    cost_unmatched: u64,
+    /// Cost-weighted tokens saved by shaped results (see [`Timelines`]).
+    saved_units: f64,
+    /// Cost-weighted tokens of follow-up reads of shaped files.
+    follow_units: f64,
+    /// Sum of later requests over matched shaped results (for the average).
+    later_sum: u64,
+    later_n: u64,
+}
+
+/// Transcript timelines of one AAES session, loaded on first use, one per context (`main` or a
+/// sub-agent id). They turn byte savings into cost-weighted tokens: a token removed from a tool
+/// result is removed from every later prompt until compaction, written to the cache once and then
+/// read (`aaes_transcripts::occupancy`).
+struct Timelines {
+    files: Vec<std::path::PathBuf>,
+    session: String,
+    by_ctx: BTreeMap<String, Option<aaes_transcripts::occupancy::Timeline>>,
+    weights: aaes_transcripts::analyze::Weights,
+}
+
+impl Timelines {
+    fn new(claude_root: Option<&std::path::Path>, session: Option<&str>) -> Self {
+        let files = match (claude_root, session) {
+            (Some(r), Some(s)) => aaes_transcripts::edits::session_files(r, s),
+            _ => Vec::new(),
+        };
+        Self {
+            files,
+            session: session.unwrap_or_default().to_owned(),
+            by_ctx: BTreeMap::new(),
+            weights: aaes_transcripts::analyze::Weights::default(),
+        }
+    }
+
+    /// The transcript file of a context: `<session>.jsonl` for `main`, `agent-<id>.jsonl` for a
+    /// sub-agent.
+    fn timeline(&mut self, ctx: &str) -> Option<&aaes_transcripts::occupancy::Timeline> {
+        if !self.by_ctx.contains_key(ctx) {
+            let want = if ctx == "main" {
+                self.session.clone()
+            } else {
+                format!("agent-{ctx}")
+            };
+            let t = self
+                .files
+                .iter()
+                .find(|f| f.file_stem().and_then(|s| s.to_str()) == Some(want.as_str()))
+                .and_then(|f| std::fs::File::open(f).ok())
+                .map(|f| {
+                    aaes_transcripts::occupancy::Timeline::from_reader(
+                        std::io::BufReader::new(f),
+                        &self.weights,
+                    )
+                })
+                .filter(|t| !t.is_empty());
+            self.by_ctx.insert(ctx.to_owned(), t);
+        }
+        self.by_ctx.get(ctx).and_then(Option::as_ref)
+    }
+
+    /// Adds the cost-weighted saving of a shaped event, or the cost of a follow-up read.
+    fn add_cost(&mut self, v: &Value, fam: &mut BTreeMap<&'static str, Family>, bpt: f64) {
+        let shaped = v["action"] == "shaped";
+        let rebound = v["rebound"].as_bool() == Some(true);
+        if !shaped && !rebound {
+            return;
+        }
+        let raw = v["raw_bytes"].as_u64().unwrap_or(0);
+        let ts = v["ts"].as_u64().unwrap_or(0);
+        let f = fam.entry(family_of(v["kind"].as_str())).or_default();
+        let Some(t) = self.timeline(v["ctx"].as_str().unwrap_or("main")) else {
+            f.cost_unmatched += 1;
+            return;
+        };
+        let k = t.later_requests(ts);
+        let w = t.weight_at(ts);
+        f.cost_n += 1;
+        if shaped {
+            let saved = raw.saturating_sub(v["delivered_bytes"].as_u64().unwrap_or(0));
+            f.saved_units += saved as f64 / bpt * w;
+            f.later_sum += k;
+            f.later_n += 1;
+        }
+        if rebound {
+            f.follow_units += raw as f64 / bpt * w;
+        }
+    }
 }
 
 impl Family {
+    fn net_units(&self) -> f64 {
+        self.saved_units - self.follow_units
+    }
+
+    fn avg_later(&self) -> Option<f64> {
+        (self.later_n > 0).then(|| self.later_sum as f64 / self.later_n as f64)
+    }
+
     fn net_tokens(&self, bpt: f64) -> i64 {
         ((self.saved as f64 - self.follow_bytes as f64) / bpt).round() as i64
     }

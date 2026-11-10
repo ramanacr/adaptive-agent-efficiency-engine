@@ -150,7 +150,23 @@ A **follow-up** is a read of a file within `followup_window_secs` (default 5 min
 
 The MET-015 verdict for a family (`read`, `search`) is `ok` when net tok is above 0 **and** there is at most 1 follow-up per shaped result. Otherwise the report says `review: raise the threshold or disable this family`.
 
-### 6.3 By repo index (CodeGraph)
+### 6.3 Cache-aware cost
+
+Token counts treat every token the same. The model price does not. A tool result stays in the context, so every later request until compaction sends it again. With prompt caching, the first of these requests writes it to the cache and the later requests read it from the cache, at about a tenth of the price.
+
+So the report also shows each family's saving in **uncached-input-equivalent tokens**. AAES finds, in the Claude Code transcript of the session, how many requests came after each shaped result and before the next compaction (`later requests`). A saved token then counts as `w_write + (later requests − 1) × w_read`, with the weights in the heading: cache write ×1.25 (5-minute cache) or ×2 (1-hour cache, mixed as observed in the session) and cache read ×0.1. Follow-up reads are weighted the same way and subtracted.
+
+| Column | Meaning |
+|---|---|
+| `saved` | Cost-weighted tokens saved by shaped results |
+| `follow-ups` | Cost-weighted tokens of follow-up reads |
+| `net` | `saved` minus `follow-ups` |
+| `later requests` | Average number of requests that carried a shaped result |
+| `matched` | Events matched to a transcript / all shaped and follow-up events. Events without a transcript (deleted, or another agent) are not counted. |
+
+The units are relative to the uncached input price, so they apply to any model. On a subscription plan they are a proxy for usage-limit consumption, because plans do not publish limits in tokens. With `--json`, each family has a `cost_weighted` object and the weights are in `cost_weights`.
+
+### 6.4 By repo index (CodeGraph)
 
 Some agent setups tell the agent to use CodeGraph (a code-graph index with an MCP tool and a `codegraph` CLI) instead of grep and whole-file reads when the repo has an index. AAES does not hook CodeGraph's MCP tool, and it passes `codegraph` shell output through unchanged. So in an indexed repo, AAES sees fewer calls it can shape.
 
@@ -164,7 +180,7 @@ To make this visible, AAES records for each event whether the working folder is 
 
 Lower savings in the `codegraph` row are expected: the agent used CodeGraph instead. AAES checks each folder once per server run, so after `codegraph init`, restart the server (`aaes serve --stop`) to update the flag.
 
-### 6.4 Edit failures (MET-016)
+### 6.5 Edit failures (MET-016)
 
 This section shows the share of Edit/MultiEdit calls that failed, for example because the `old_string` was not found. A failed Edit can mean that the agent guessed text it did not see.
 
