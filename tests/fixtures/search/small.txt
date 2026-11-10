@@ -1,0 +1,5 @@
+src/a0.rs:0:x
+src/a1.rs:1:x
+src/a2.rs:2:x
+src/a3.rs:3:x
+src/a4.rs:4:x

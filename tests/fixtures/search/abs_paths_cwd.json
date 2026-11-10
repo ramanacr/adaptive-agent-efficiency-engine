@@ -1,0 +1,7 @@
+{
+  "cwd": "/home/dev/repo",
+  "single_path": null,
+  "expect": "shaped",
+  "matches": 75,
+  "files": 5
+}

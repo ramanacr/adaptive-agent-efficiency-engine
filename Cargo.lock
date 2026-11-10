@@ -18,6 +18,9 @@ dependencies = [
 [[package]]
 name = "aaes-core"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "aaes-runtime"

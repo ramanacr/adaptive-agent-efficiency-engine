@@ -1,0 +1,7 @@
+{
+  "cwd": null,
+  "single_path": "src/big.rs",
+  "expect": "shaped",
+  "matches": 90,
+  "files": 1
+}

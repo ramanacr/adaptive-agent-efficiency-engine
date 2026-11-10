@@ -325,7 +325,10 @@ pub fn shape_search<'a>(
     if raw_tokens < cfg.search_threshold_tokens {
         return Err(SearchSkip::Small);
     }
+    // A UTF-8 BOM (PowerShell output) would otherwise become part of the first path.
     let lines: Vec<&str> = text
+        .strip_prefix('\u{feff}')
+        .unwrap_or(text)
         .lines()
         .filter(|l| !l.is_empty() && *l != "--")
         .collect();
@@ -448,7 +451,11 @@ pub fn shape_search<'a>(
     }
     out.push('\n');
 
-    if omitted == 0 && (out.len() as f64) > text.len() as f64 * (1.0 - cfg.search_min_saving) {
+    // Delivered output is never larger than the raw output (M1 exit criterion), even when lines
+    // were capped; without capping it must also save at least `search_min_saving`.
+    if out.len() >= text.len()
+        || (omitted == 0 && (out.len() as f64) > text.len() as f64 * (1.0 - cfg.search_min_saving))
+    {
         return Err(SearchSkip::LowSaving);
     }
     Ok(SearchShape {

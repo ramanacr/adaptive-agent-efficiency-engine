@@ -1,0 +1,66 @@
+pkg/store0/db.go (35 matches, showing first 20 lines)
+  1:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  21:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  23:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  25:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  27:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  29:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  31:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  33:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  35:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  37:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  39:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+pkg/store1/db.go (35 matches, showing first 20 lines)
+  1:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  21:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  23:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  25:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  27:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  29:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  31:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  33:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  35:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  37:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  39:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+pkg/store2/db.go (35 matches, showing first 20 lines)
+  1:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  21:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  23:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  25:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  27:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  29:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  31:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  33:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  35:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  37:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  39:	if err := tx.Commit(); err != nil { // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+pkg/store3/db.go (1 match)
+  7:	if err := tx.Comm
+[aaes] 106 matches in 4 files; each path shown once. 45 lines omitted from 3 files (cap 20 per file); full output: `aaes show h_golden` (supports --grep, --lines).

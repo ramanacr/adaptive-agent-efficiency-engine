@@ -1114,6 +1114,106 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// M1 exit criterion: two concurrent sessions stay isolated. Each session reads the same files
+    /// at the same time, through one shared runtime (resident `aaes serve`) and through separate
+    /// runtimes on the same data folder (one process per hook call). Read state, stored raw
+    /// output and event logs must never mix between the sessions.
+    #[test]
+    fn concurrent_sessions_are_isolated() {
+        const FILES: usize = 8;
+        let (shared, home) = rt();
+        let mut sep_a = Runtime::new(home.clone());
+        sep_a.cfg.read_shaping = true;
+        let mut sep_b = Runtime::new(home.clone());
+        sep_b.cfg.read_shaping = true;
+        let src = big_ts();
+
+        let run = |rt: &Runtime, session: &str, barrier: &std::sync::Barrier| -> String {
+            barrier.wait();
+            for i in 0..FILES {
+                let path = format!("C:\\repo\\src\\f{i}.ts");
+                let first = handle(rt, &read_event(session, None, &path, &src, false));
+                assert!(
+                    first["hookSpecificOutput"]["updatedToolOutput"].is_object(),
+                    "{session}: first whole read of f{i} must be shaped"
+                );
+                let second = handle(rt, &read_event(session, None, &path, &src, false));
+                assert_eq!(
+                    second,
+                    json!({}),
+                    "{session}: second read of f{i} must be full"
+                );
+            }
+            let mut content = String::new();
+            for l in 0..60 {
+                content.push_str(&format!(
+                    "C:\\repo\\src\\Only{session}.cs:{}:    var marker = \"{session}\"; // padding text for size\n",
+                    l + 1
+                ));
+            }
+            let out = handle(
+                rt,
+                &json!({
+                    "hook_event_name": "PostToolUse", "session_id": session, "cwd": "C:\\repo",
+                    "tool_name": "Grep", "tool_input": {"pattern": "marker", "output_mode": "content"},
+                    "tool_response": {"mode": "content", "content": content, "numLines": 60, "filenames": [], "numFiles": 1}
+                }),
+            );
+            let text = out["hookSpecificOutput"]["updatedToolOutput"]["content"]
+                .as_str()
+                .expect("grep shaped")
+                .to_string();
+            let h = text
+                .split("aaes show ")
+                .nth(1)
+                .and_then(|t| t.split('`').next())
+                .expect("handle in footer")
+                .to_string();
+            assert_eq!(store::load(&home, &h).as_deref(), Some(content.as_str()));
+            h
+        };
+
+        for (label, a, b) in [
+            ("shared runtime", &shared, &shared),
+            ("separate runtimes", &sep_a, &sep_b),
+        ] {
+            let (sa, sb) = (
+                format!("{label}-a").replace(' ', "_"),
+                format!("{label}-b").replace(' ', "_"),
+            );
+            let barrier = std::sync::Barrier::new(2);
+            let (ha, hb) = std::thread::scope(|s| {
+                let ta = s.spawn(|| run(a, &sa, &barrier));
+                let tb = s.spawn(|| run(b, &sb, &barrier));
+                (ta.join().unwrap(), tb.join().unwrap())
+            });
+            assert_ne!(ha, hb, "{label}: each session gets its own handle");
+            for (session, other) in [(&sa, &sb), (&sb, &sa)] {
+                let events = std::fs::read_to_string(
+                    paths::session_dir(&home, session).join("events.jsonl"),
+                )
+                .unwrap();
+                assert_eq!(
+                    events.lines().count(),
+                    2 * FILES + 1,
+                    "{label}: {session} has exactly its own events"
+                );
+                assert!(
+                    !events.contains(other.as_str()),
+                    "{label}: no events of {other}"
+                );
+            }
+            // Each session's raw output sits in its own artifacts folder.
+            for (session, h) in [(&sa, &ha), (&sb, &hb)] {
+                let art = paths::session_dir(&home, session)
+                    .join("artifacts")
+                    .join(format!("{h}.bin"));
+                assert!(art.exists(), "{label}: {h} stored under {session}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     #[test]
     fn shell_cat_shaped_and_kill_switch() {
         let (rt, home) = rt();

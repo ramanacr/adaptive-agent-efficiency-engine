@@ -1,0 +1,85 @@
+web/app/comp0.ts (12 matches, showing first 20 lines)
+  4-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:  this.store.dispatch(load0x0()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:  this.store.dispatch(load0x1()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  24-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  25:  this.store.dispatch(load0x2()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  26-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  34-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  35:  this.store.dispatch(load0x3()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  36-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  44-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  45:  this.store.dispatch(load0x4()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  46-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  54-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  55:  this.store.dispatch(load0x5()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  56-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  64-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  65:  this.store.dispatch(load0x6()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+web/app/comp1.ts (12 matches, showing first 20 lines)
+  4-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:  this.store.dispatch(load1x0()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:  this.store.dispatch(load1x1()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  24-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  25:  this.store.dispatch(load1x2()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  26-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  34-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  35:  this.store.dispatch(load1x3()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  36-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  44-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  45:  this.store.dispatch(load1x4()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  46-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  54-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  55:  this.store.dispatch(load1x5()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  56-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  64-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  65:  this.store.dispatch(load1x6()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+web/app/comp2.ts (12 matches, showing first 20 lines)
+  4-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:  this.store.dispatch(load2x0()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:  this.store.dispatch(load2x1()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  24-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  25:  this.store.dispatch(load2x2()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  26-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  34-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  35:  this.store.dispatch(load2x3()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  36-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  44-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  45:  this.store.dispatch(load2x4()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  46-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  54-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  55:  this.store.dispatch(load2x5()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  56-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  64-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  65:  this.store.dispatch(load2x6()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+web/app/comp3.ts (12 matches, showing first 20 lines)
+  4-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:  this.store.dispatch(load3x0()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:  this.store.dispatch(load3x1()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  24-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  25:  this.store.dispatch(load3x2()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  26-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  34-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  35:  this.store.dispatch(load3x3()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  36-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  44-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  45:  this.store.dispatch(load3x4()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  46-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  54-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  55:  this.store.dispatch(load3x5()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  56-  // after the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  64-  // before the call await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  65:  this.store.dispatch(load3x6()); await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+[aaes] 48 matches in 4 files; each path shown once. 64 lines omitted from 4 files (cap 20 per file); full output: `aaes show h_golden` (supports --grep, --lines).

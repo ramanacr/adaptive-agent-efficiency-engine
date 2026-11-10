@@ -1,0 +1,37 @@
+src\App\Program.cs (30 matches, showing first 20 lines)
+  1:        services.AddScoped<IHandler, Handler0>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  2:        services.AddScoped<IHandler, Handler1>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:        services.AddScoped<IHandler, Handler2>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  4:        services.AddScoped<IHandler, Handler3>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:        services.AddScoped<IHandler, Handler4>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6:        services.AddScoped<IHandler, Handler5>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:        services.AddScoped<IHandler, Handler6>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  8:        services.AddScoped<IHandler, Handler7>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:        services.AddScoped<IHandler, Handler8>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  10:        services.AddScoped<IHandler, Handler9>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:        services.AddScoped<IHandler, Handler10>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  12:        services.AddScoped<IHandler, Handler11>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:        services.AddScoped<IHandler, Handler12>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14:        services.AddScoped<IHandler, Handler13>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:        services.AddScoped<IHandler, Handler14>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16:        services.AddScoped<IHandler, Handler15>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:        services.AddScoped<IHandler, Handler16>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  18:        services.AddScoped<IHandler, Handler17>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:        services.AddScoped<IHandler, Handler18>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  20:        services.AddScoped<IHandler, Handler19>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+src\Lib\Mediator.cs (9 matches)
+  1:        services.AddScoped<IHandler, Handler0>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  2:        services.AddScoped<IHandler, Handler1>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:        services.AddScoped<IHandler, Handler2>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  4:        services.AddScoped<IHandler, Handler3>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:        services.AddScoped<IHandler, Handler4>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6:        services.AddScoped<IHandler, Handler5>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:        services.AddScoped<IHandler, Handler6>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  8:        services.AddScoped<IHandler, Handler7>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:        services.AddScoped<IHandler, Handler8>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+D:\other\Shared.cs (4 matches)
+  1:        services.AddScoped<IHandler, Handler0>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  2:        services.AddScoped<IHandler, Handler1>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:        services.AddScoped<IHandler, Handler2>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  4:        services.AddScoped<IHandler, Handler3>(); // await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+[aaes] 43 matches in 3 files; each path shown once, relative to C:\repo. 10 lines omitted from 1 file (cap 20 per file); full output: `aaes show h_golden` (supports --grep, --lines).

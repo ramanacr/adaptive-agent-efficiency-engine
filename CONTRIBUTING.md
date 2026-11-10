@@ -17,6 +17,8 @@ cargo test --workspace
 ```
 CI runs the same on Linux, Windows and macOS with warnings treated as errors.
 
+Shaping changes must keep the fidelity goldens passing (`cargo test -p aaes-core --test golden`). Fixtures come from `tests/fixtures/gen_golden.py`. If a change to the shaped output is intended, run `AAES_UPDATE_GOLDEN=1 cargo test -p aaes-core --test golden`, review every changed `*.expected` file, and commit them with the change. The invariants in the test (exact totals, verbatim lines, nothing lost, delivered smaller than raw) must never be relaxed to make a change pass.
+
 Changes to hook handling or the hook response format also need the contract test against real Claude Code. It needs a Claude Code login, so it is not in CI:
 ```bash
 pwsh scripts/contract-test.ps1 -Aaes target/release/aaes -Auth subscription

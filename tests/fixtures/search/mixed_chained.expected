@@ -1,0 +1,106 @@
+src/api/ctrl0.py (30 matches, showing first 20 lines)
+  1:    return handler_0_0(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  2:    return handler_0_1(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:    return handler_0_2(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  4:    return handler_0_3(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:    return handler_0_4(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6:    return handler_0_5(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:    return handler_0_6(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  8:    return handler_0_7(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:    return handler_0_8(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  10:    return handler_0_9(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:    return handler_0_10(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  12:    return handler_0_11(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:    return handler_0_12(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14:    return handler_0_13(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:    return handler_0_14(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16:    return handler_0_15(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:    return handler_0_16(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  18:    return handler_0_17(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:    return handler_0_18(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  20:    return handler_0_19(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+src/api/ctrl1.py (30 matches, showing first 20 lines)
+  1:    return handler_1_0(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  2:    return handler_1_1(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:    return handler_1_2(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  4:    return handler_1_3(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:    return handler_1_4(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6:    return handler_1_5(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:    return handler_1_6(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  8:    return handler_1_7(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:    return handler_1_8(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  10:    return handler_1_9(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:    return handler_1_10(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  12:    return handler_1_11(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:    return handler_1_12(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14:    return handler_1_13(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:    return handler_1_14(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16:    return handler_1_15(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:    return handler_1_16(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  18:    return handler_1_17(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:    return handler_1_18(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  20:    return handler_1_19(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+src/api/ctrl2.py (30 matches, showing first 20 lines)
+  1:    return handler_2_0(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  2:    return handler_2_1(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:    return handler_2_2(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  4:    return handler_2_3(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:    return handler_2_4(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6:    return handler_2_5(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:    return handler_2_6(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  8:    return handler_2_7(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:    return handler_2_8(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  10:    return handler_2_9(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:    return handler_2_10(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  12:    return handler_2_11(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:    return handler_2_12(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14:    return handler_2_13(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:    return handler_2_14(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16:    return handler_2_15(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:    return handler_2_16(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  18:    return handler_2_17(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:    return handler_2_18(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  20:    return handler_2_19(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+src/api/ctrl3.py (30 matches, showing first 20 lines)
+  1:    return handler_3_0(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  2:    return handler_3_1(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  3:    return handler_3_2(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  4:    return handler_3_3(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  5:    return handler_3_4(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  6:    return handler_3_5(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  7:    return handler_3_6(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  8:    return handler_3_7(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  9:    return handler_3_8(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  10:    return handler_3_9(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  11:    return handler_3_10(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  12:    return handler_3_11(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  13:    return handler_3_12(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  14:    return handler_3_13(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  15:    return handler_3_14(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  16:    return handler_3_15(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  17:    return handler_3_16(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  18:    return handler_3_17(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  19:    return handler_3_18(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+  20:    return handler_3_19(request)  # await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+[aaes] 20 other lines (not `path:line` form), verbatim in original order:
+1:    extra single file hit 0 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+2:    extra single file hit 1 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+3:    extra single file hit 2 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+4:    extra single file hit 3 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+5:    extra single file hit 4 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+6:    extra single file hit 5 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+7:    extra single file hit 6 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+8:    extra single file hit 7 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+9:    extra single file hit 8 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+10:    extra single file hit 9 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+11:    extra single file hit 10 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+12:    extra single file hit 11 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+13:    extra single file hit 12 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+14:    extra single file hit 13 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+15:    extra single file hit 14 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+16:    extra single file hit 15 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+17:    extra single file hit 16 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+18:    extra single file hit 17 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+19:    extra single file hit 18 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+20:    extra single file hit 19 await _service.ProcessAsync(request, cancellationToken); // synthetic padding
+[aaes] 120 matches in 4 files; each path shown once. 40 lines omitted from 4 files (cap 20 per file); full output: `aaes show h_golden` (supports --grep, --lines).
