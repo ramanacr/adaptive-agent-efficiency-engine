@@ -99,6 +99,7 @@ grep -q 'PostToolUse' "$settings" || fail "no PostToolUse hook in settings"
 grep -q 'aaes' "$settings" || fail "hook command does not name aaes"
 
 step "5. hook call shapes a large Grep result; show returns omitted lines"
+t5=$SECONDS
 content=$(awk 'BEGIN { for (f = 0; f < 30; f++) for (l = 1; l <= 40; l++) printf "src/module%d/file%d.ts:%d:  const value%d = compute(input, %d);\\n", f, f, l, l, l }')
 payload='{"hook_event_name":"PostToolUse","session_id":"clean-install","cwd":"/repo","tool_name":"Grep","tool_input":{"pattern":"compute","output_mode":"content"},"tool_response":{"mode":"content","numFiles":0,"filenames":[],"content":"'"$content"'","numLines":1200}}'
 resp=$(printf '%s' "$payload" | "$aaes" hook)
@@ -110,8 +111,10 @@ shown=$("$aaes" show "$handle" --grep 'module29/file29.ts:40:')
 case "$shown" in *"value40 = compute(input, 40)"*) ;; *) fail "aaes show did not return the omitted line" ;; esac
 # Where the artifact key lives (SEC-012). Linux must use the kernel keyring; on macOS the
 # fresh HOME may hide the login Keychain, so the result is reported, not required.
-keyfile=$(head -c 12 "$AAES_HOME/artifact-key" | tr -c '[:print:]' '?')
+keyfile=$(head -c 12 "$AAES_HOME/artifact-key" | LC_ALL=C tr -c '[:print:]' '?')
 echo "key file starts with: $keyfile"
+# A keystore that is not there must not cost seconds per process (command mode).
+[ $((SECONDS - t5)) -le 10 ] || fail "hook and show took $((SECONDS - t5)) s"
 case "$target" in
   *linux*) [ "$keyfile" = "AAESKEY1KS1:" ] || fail "artifact key is not in the kernel keyring" ;;
 esac

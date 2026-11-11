@@ -90,6 +90,7 @@ pub fn remove_key(home: &Path) -> std::io::Result<()> {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .remove(home);
+    let _ = std::fs::remove_file(path.with_extension("nostore"));
     match std::fs::remove_file(&path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
@@ -159,6 +160,9 @@ fn load_or_create(home: &Path, keystore: bool) -> std::io::Result<RawKey> {
     }
     match linked {
         Ok(()) => {
+            if keystore && entry.is_none() {
+                note_no_keystore(&path);
+            }
             log::info(
                 "store",
                 "artifact key created",
@@ -375,22 +379,57 @@ fn keystore_id(w: &[u8]) -> Option<&str> {
 
 /// A plain key file found while a keystore is usable: move the key into the keystore and rewrite
 /// the file atomically. A process that read the old file holds the same key, so this is safe while
-/// other AAES processes run. Best effort: on failure the file stays as it was.
+/// other AAES processes run. Best effort: on failure the file stays as it was. A failed attempt
+/// is not repeated for a day, because a keystore that is not there can cost seconds to find out
+/// (`security` timeouts) and command mode starts one process per tool call.
 #[cfg(not(windows))]
 fn move_to_keystore(path: &Path, k: &RawKey) {
-    let Some(id) = keystore_put(k) else { return };
+    let marker = no_keystore_marker(path);
+    let recent = std::fs::metadata(&marker)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age < NO_KEYSTORE_RETRY);
+    if recent {
+        return;
+    }
+    let Some(id) = keystore_put(k) else {
+        note_no_keystore(path);
+        return;
+    };
     let mut file = KEY_MAGIC.to_vec();
     file.extend(KS_TAG);
     file.extend(id.as_bytes());
     match paths::write_private(path, &file) {
-        Ok(()) => log::info(
-            "store",
-            "artifact key moved into the OS keystore",
-            json!({"key_store": keystore::NAME}),
-        ),
+        Ok(()) => {
+            let _ = std::fs::remove_file(&marker);
+            log::info(
+                "store",
+                "artifact key moved into the OS keystore",
+                json!({"key_store": keystore::NAME}),
+            );
+        }
         Err(_) => keystore::delete(&id),
     }
 }
+
+/// How long a failed keystore attempt holds off the next one.
+#[cfg(not(windows))]
+const NO_KEYSTORE_RETRY: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+#[cfg(not(windows))]
+fn no_keystore_marker(path: &Path) -> PathBuf {
+    path.with_extension("nostore")
+}
+
+/// Record that the keystore was not usable (the marker's modification time is the attempt time).
+#[cfg(not(windows))]
+fn note_no_keystore(path: &Path) {
+    let _ = paths::write_private(&no_keystore_marker(path), b"");
+}
+
+#[cfg(windows)]
+fn note_no_keystore(_path: &Path) {}
 
 #[cfg(not(windows))]
 fn drop_entry(entry: Option<&str>) {
@@ -490,6 +529,27 @@ mod tests {
         );
         assert_eq!(unhex(b"0g"), None);
         assert_eq!(unhex(b"abc"), None);
+    }
+
+    /// A recent failed keystore attempt stops the next process from trying again.
+    #[cfg(not(windows))]
+    #[test]
+    fn failed_keystore_attempt_is_not_repeated_at_once() {
+        let h = home("nostore");
+        let k = [7u8; 32];
+        let mut plain = KEY_MAGIC.to_vec();
+        plain.extend(k);
+        paths::write_private(&h.join(KEY_FILE), &plain).unwrap();
+        note_no_keystore(&h.join(KEY_FILE));
+        assert_eq!(load_or_create(&h, true).unwrap(), k);
+        assert_eq!(
+            std::fs::read(h.join(KEY_FILE)).unwrap(),
+            plain,
+            "no attempt"
+        );
+        remove_key(&h).unwrap();
+        assert!(!h.join("artifact-key.nostore").exists());
+        let _ = std::fs::remove_dir_all(&h);
     }
 
     /// The real OS keystore (login Keychain, kernel user keyring). It adds and removes entries, so

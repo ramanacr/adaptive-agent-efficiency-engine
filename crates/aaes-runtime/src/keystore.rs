@@ -57,6 +57,9 @@ mod macos {
     /// is never in a process argument list. The caller verifies the result with `get`.
     pub(crate) fn put(id: &str, secret: &[u8]) -> Result<(), String> {
         let secret = std::str::from_utf8(secret).map_err(|_| "secret is not ASCII".to_string())?;
+        // No default keychain (for example a service account or an unusual HOME): fail at once
+        // instead of waiting for `security`.
+        SecKeychain::default().map_err(|e| format!("no default keychain: {e}"))?;
         let mut child = Command::new(SECURITY)
             .arg("-i")
             .stdin(Stdio::piped())
@@ -73,7 +76,7 @@ mod macos {
                 .write_all(cmd.as_bytes())
                 .map_err(|e| format!("cannot write to {SECURITY}: {e}"))?;
         }
-        wait(&mut child, Duration::from_secs(10)).map(|_| ())
+        wait(&mut child, Duration::from_secs(3)).map(|_| ())
     }
 
     pub(crate) fn get(id: &str) -> Lookup {
