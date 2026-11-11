@@ -315,6 +315,10 @@ impl<'a> Replayer<'a> {
                     self.tally.fam("read").ranged += 1;
                     return;
                 }
+                if resp["file"]["truncatedByTokenCap"].as_bool() == Some(true) {
+                    self.tally.fam("read").host_truncated += 1;
+                    return;
+                }
                 let num = resp["file"]["numLines"].as_u64().unwrap_or(0);
                 let total = resp["file"]["totalLines"].as_u64().unwrap_or(0);
                 if num > 0 && num <= self.shape_for(cwd).head_lines as u64 && total > num {

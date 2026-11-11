@@ -1,0 +1,145 @@
+{
+  "about": "Hook inputs in the shapes Claude Code sends, with synthetic content. Field sets come from tool results observed in Claude Code 2.1.209 to 2.1.321 (transcript toolUseResult has the same shape as the hook's tool_response). Placeholders: {{BIG_TS}} large TypeScript file, {{GREP}} large grep output, {{SMALL}} small text. Checked by crates/aaes-runtime/tests/payload_contract.rs. See docs/COMPATIBILITY.md.",
+  "cases": [
+    {
+      "name": "read_whole_large",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-read-whole", "transcript_path": "/tmp/t.jsonl", "cwd": "/repo", "permission_mode": "default",
+        "tool_name": "Read", "tool_use_id": "toolu_1",
+        "tool_input": { "file_path": "/repo/src/big.ts" },
+        "tool_response": { "type": "text", "file": { "filePath": "/repo/src/big.ts", "content": "{{BIG_TS}}", "numLines": 0, "startLine": 1, "totalLines": 0 } }
+      },
+      "expect": { "replaced": true, "event": { "kind": "read", "action": "shaped", "reason": "large" } }
+    },
+    {
+      "name": "read_ranged",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-read-ranged", "cwd": "/repo",
+        "tool_name": "Read",
+        "tool_input": { "file_path": "/repo/src/big.ts", "offset": 100, "limit": 50 },
+        "tool_response": { "type": "text", "file": { "filePath": "/repo/src/big.ts", "content": "{{BIG_TS}}", "numLines": 50, "startLine": 100, "totalLines": 903 } }
+      },
+      "expect": { "replaced": false, "event": { "kind": "read", "action": "pass", "reason": "ranged" } }
+    },
+    {
+      "name": "read_truncated_by_token_cap",
+      "observed": "2.1.217-2.1.281",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-read-cap", "cwd": "/repo",
+        "tool_name": "Read",
+        "tool_input": { "file_path": "/repo/src/big.ts" },
+        "tool_response": { "type": "text", "file": { "filePath": "/repo/src/big.ts", "content": "{{BIG_TS}}", "numLines": 903, "startLine": 1, "totalLines": 5000, "truncatedByTokenCap": true } }
+      },
+      "expect": { "replaced": false, "event": { "kind": "read", "action": "pass", "reason": "host_truncated" } }
+    },
+    {
+      "name": "read_image",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-read-image", "cwd": "/repo",
+        "tool_name": "Read",
+        "tool_input": { "file_path": "/repo/logo.png" },
+        "tool_response": { "type": "image", "file": { "base64": "iVBORw0KGgo=", "type": "image/png", "originalSize": 8, "dimensions": { "originalWidth": 1, "originalHeight": 1 } } }
+      },
+      "expect": { "replaced": false, "event": null }
+    },
+    {
+      "name": "grep_content_large",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-grep", "cwd": "/repo",
+        "tool_name": "Grep",
+        "tool_input": { "pattern": "compute", "path": "/repo", "output_mode": "content", "-n": true },
+        "tool_response": { "mode": "content", "numFiles": 0, "filenames": [], "content": "{{GREP}}", "numLines": 1200, "appliedLimit": 0 }
+      },
+      "expect": { "replaced": true, "event": { "kind": "search", "action": "shaped", "reason": "grouped_capped" } }
+    },
+    {
+      "name": "grep_files_with_matches",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-grep-files", "cwd": "/repo",
+        "tool_name": "Grep",
+        "tool_input": { "pattern": "compute" },
+        "tool_response": { "mode": "files_with_matches", "filenames": ["/repo/a.ts", "/repo/b.ts"], "numFiles": 2, "totalFiles": 2 }
+      },
+      "expect": { "replaced": false, "event": { "kind": "search", "action": "pass", "reason": "not_content_mode" } }
+    },
+    {
+      "name": "grep_count",
+      "observed": "2.1.260-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-grep-count", "cwd": "/repo",
+        "tool_name": "Grep",
+        "tool_input": { "pattern": "compute", "output_mode": "count" },
+        "tool_response": { "mode": "count", "filenames": [], "numFiles": 2, "content": "a.ts:3\nb.ts:4", "numMatches": 7 }
+      },
+      "expect": { "replaced": false, "event": { "kind": "search", "action": "pass", "reason": "not_content_mode" } }
+    },
+    {
+      "name": "bash_rg_large",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-bash-rg", "cwd": "/repo",
+        "tool_name": "Bash",
+        "tool_input": { "command": "rg -n compute src", "description": "Search" },
+        "tool_response": { "stdout": "{{GREP}}", "stderr": "", "interrupted": false, "isImage": false, "noOutputExpected": false }
+      },
+      "expect": { "replaced": true, "event": { "kind": "search", "action": "shaped", "reason": "grouped_capped" } }
+    },
+    {
+      "name": "bash_persisted_output",
+      "observed": "2.1.209-2.1.308",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-bash-persisted", "cwd": "/repo",
+        "tool_name": "Bash",
+        "tool_input": { "command": "rg -n compute src" },
+        "tool_response": { "stdout": "{{GREP}}", "stderr": "", "interrupted": false, "isImage": false, "noOutputExpected": false, "persistedOutputPath": "/tmp/out.txt", "persistedOutputSize": 120000 }
+      },
+      "expect": { "replaced": false, "event": { "kind": "search", "action": "pass", "reason": "host_truncated" } }
+    },
+    {
+      "name": "bash_background",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-bash-bg", "cwd": "/repo",
+        "tool_name": "Bash",
+        "tool_input": { "command": "npm run dev", "run_in_background": true },
+        "tool_response": { "stdout": "", "stderr": "", "interrupted": false, "isImage": false, "noOutputExpected": false, "backgroundTaskId": "b1" }
+      },
+      "expect": { "replaced": false, "event": { "kind": "other", "action": "pass", "reason": "not_handled" } }
+    },
+    {
+      "name": "powershell_get_content_large",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-ps-gc", "cwd": "C:\\repo",
+        "tool_name": "PowerShell",
+        "tool_input": { "command": "Get-Content src\\big.ts" },
+        "tool_response": { "stdout": "{{BIG_TS}}", "stderr": "", "interrupted": false }
+      },
+      "expect": { "replaced": true, "event": { "kind": "shell_read", "action": "shaped", "reason": "large" } }
+    },
+    {
+      "name": "powershell_return_code",
+      "observed": "2.1.258-2.1.308",
+      "event": {
+        "hook_event_name": "PostToolUse", "session_id": "c-ps-rc", "cwd": "C:\\repo",
+        "tool_name": "PowerShell",
+        "tool_input": { "command": "git status" },
+        "tool_response": { "stdout": "{{SMALL}}", "stderr": "", "interrupted": false, "isImage": false, "returnCodeInterpretation": "exit 0" }
+      },
+      "expect": { "replaced": false, "event": { "kind": "other", "action": "pass", "reason": "not_handled" } }
+    },
+    {
+      "name": "session_start",
+      "observed": "2.1.209-2.1.321",
+      "event": {
+        "hook_event_name": "SessionStart", "session_id": "c-start", "cwd": "/repo", "source": "startup"
+      },
+      "expect": { "replaced": false, "context": true, "event": null }
+    }
+  ]
+}

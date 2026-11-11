@@ -471,6 +471,21 @@ fn post_tool_use(rt: &Runtime, input: &Value, session: &str, ctx: &str, dir: &Pa
                 );
                 return json!({});
             }
+            // Claude Code already cut the file at its token cap: an outline of the part it kept
+            // would look complete but miss the rest of the file. Pass through.
+            if file["truncatedByTokenCap"].as_bool() == Some(true) {
+                c.log(
+                    "read",
+                    Action::PassThrough,
+                    "host_truncated",
+                    content.len(),
+                    content.len(),
+                    Some(&key),
+                    false,
+                    json!({ "ext": ext(path), "total_lines": total_lines }),
+                );
+                return json!({});
+            }
             if eff.shadow("read") {
                 if let Some(r) = shape::shape_read(path, content, cfg) {
                     let total = total_lines.unwrap_or(r.total_lines);

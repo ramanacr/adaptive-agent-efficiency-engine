@@ -48,6 +48,7 @@ Stored outputs are encrypted at rest and deleted 24 h after the session's last a
 | Doc | Contents |
 |---|---|
 | [User guide](docs/USER_GUIDE.md) | Install, agent behavior, `aaes show`, reading `aaes report`, data and privacy, configuration, troubleshooting |
+| [Compatibility](docs/COMPATIBILITY.md) | Supported Claude Code versions, hook fields AAES reads, platforms, Rust toolchain |
 | [01 Requirements](Implementation%20Docs/01_REQUIREMENTS.md) | Functional, security, metrics and self-improvement requirements; NFR targets; evidence contracts |
 | [02 Architecture & ADRs](Implementation%20Docs/02_ARCHITECTURE_ADRS.md) | Reference architecture, data flow, ADR-001…020, contracts, isolation tiers, risks |
 | [03 Benchmark plan](Implementation%20Docs/03_BENCHMARK_PLAN.md) | Phase 0 study, arms A/A′/B/C/D/E, public/private corpora, sample sizes, gates |
