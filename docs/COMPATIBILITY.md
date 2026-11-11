@@ -52,15 +52,24 @@ To add a new Claude Code version:
 
 ## 2. Platforms
 
-| Platform | Release archive | CI (build and unit tests) | Live contract test | Hook mode default |
-|---|---|---|---|---|
-| Windows x64 | yes | yes | yes (2.1.233) | `http` |
-| Windows arm64 | yes (cross-built, not run) | no | no | `http` |
-| Linux x64 (musl) | yes | yes | no | `command` |
-| Linux arm64 (musl) | yes | no (release build runs `aaes --version`) | no | `command` |
-| macOS (universal: x64 + arm64) | yes | yes (arm64 runner) | no | `command` |
+| Platform | Release archive | CI (build and unit tests) | Clean-install test (runner) | Live contract test | Hook mode default |
+|---|---|---|---|---|---|
+| Windows x64 | yes | yes | yes (`windows-latest`) | yes (2.1.233) | `http` |
+| Windows arm64 | yes (cross-built) | no | yes (`windows-11-arm`) | no | `http` |
+| Linux x64 (musl) | yes | yes | yes (`ubuntu-latest`) | no | `command` |
+| Linux arm64 (musl) | yes | no | yes (`ubuntu-24.04-arm`) | no | `command` |
+| macOS (universal: x64 + arm64) | yes | yes (arm64 runner) | yes (`macos-latest`; x64 slice through Rosetta) | no | `command` |
 
-The open clean-machine tests are macOS, Linux arm64 and Windows arm64. Encryption at rest uses DPAPI on Windows and a mode-0600 key file on macOS and Linux (see the user guide, section 8).
+The clean-install test runs in the release workflow, before the draft release is created. Each archive is unpacked on a fresh runner of its own platform, with an empty home folder and AAES data folder, and `scripts/clean-install-smoke.sh` checks:
+
+1. The archive matches `SHA256SUMS`, and it holds `LICENSE` and `README.md`.
+2. The binary needs no dynamic C runtime. On Windows it has no `VCRUNTIME140.dll` reference, on Linux it is statically linked, and on macOS it links system libraries only.
+3. `aaes --version` prints the archive's version.
+4. `aaes init --mode command` writes the hooks into a temporary settings file.
+5. A hook call shapes a large Grep result with exact totals, and `aaes show` returns an omitted line from the encrypted store.
+6. `aaes report --json` counts the session, `aaes uninstall` removes the hooks, and the AAES log has no errors or warnings.
+
+A failure stops the release: no draft is created. The test does not run Claude Code. Encryption at rest uses DPAPI on Windows and a mode-0600 key file on macOS and Linux (see the user guide, section 8).
 
 ## 3. Rust toolchain
 

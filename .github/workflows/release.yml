@@ -1,7 +1,7 @@
 name: release
 
-# Tag push `vX.Y.Z` (must equal the workspace version): build, package, attest and create a
-# DRAFT GitHub Release for the owner to review and publish.
+# Tag push `vX.Y.Z` (must equal the workspace version): build, package, attest, test each
+# archive on a clean runner, and create a DRAFT GitHub Release for the owner to review and publish.
 # Manual run (workflow_dispatch): same build and packaging, uploaded as a workflow artifact only.
 on:
   push:
@@ -125,7 +125,7 @@ jobs:
       (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # draft release
+      contents: read
       id-token: write      # Sigstore signing for build provenance
       attestations: write
     steps:
@@ -174,10 +174,52 @@ jobs:
         with:
           name: dist
           path: dist/*
+
+  # Each archive, unpacked on a fresh runner of its own platform, with an empty home folder:
+  # checksum, no dynamic C runtime, version, init, a shaped hook call, `aaes show`, report and
+  # uninstall (scripts/clean-install-smoke.sh). No Rust toolchain is used.
+  clean-install:
+    name: clean install ${{ matrix.target }} on ${{ matrix.os }}
+    needs: package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { target: aarch64-pc-windows-msvc, os: windows-11-arm }
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          # macOS arm64; the script also runs the x86_64 slice through Rosetta.
+          - { target: universal-apple-darwin, os: macos-latest }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Smoke test
+        shell: bash
+        run: bash scripts/clean-install-smoke.sh dist ${{ matrix.target }}
+
+  draft:
+    name: draft release
+    needs: clean-install
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # draft release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
       - name: Draft release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --generate-notes \
             --title "AAES $GITHUB_REF_NAME"
