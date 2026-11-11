@@ -13,6 +13,7 @@ pub mod model;
 pub mod occupancy;
 pub mod probe;
 pub mod report;
+pub mod tools;
 pub mod websearch;
 
 /// Command-family parsing lives in `aaes-core`; re-exported for existing callers.

@@ -365,6 +365,21 @@ The server reads `config.json` when it starts. After a change, restart it: `aaes
 
 `aaes mine` reads your existing Claude Code and Codex transcripts (read-only). It reports where tool-output tokens go, so you can see if AAES is worth trying. The report ends with a web-search section (MET-017): how many `WebSearch` calls you made, how many were duplicates, how often searches came in bursts, and how often the provider's rate limit was hit. It shows counts only, never query text. See the [README](../README.md#quick-start-measure-your-own-sessions-m-1) and `aaes mine --help`.
 
+### 12.1 The fixed request prefix: `aaes mine --tools`
+
+Every model request starts with the same prefix: the system prompt, the tool definitions, and the lists that Claude Code adds (deferred tool names, MCP server instructions, skills, agents). MCP servers and plugins make it larger. `aaes mine --tools` measures it from the transcripts (Claude Code 2.1.304 or later records the exact prefix) and shows:
+
+- the prefix's share of your cost-weighted input (cache reads on most requests, cache writes when the cache was rewritten);
+- for each group (built-in tools, each MCP server, each plugin server, the system prompt, the skill and agent listings): tokens per session, loaded and deferred tools, share of input, calls and last use;
+- the MCP servers and plugins that are in the prefix but had no calls in the window.
+
+```bash
+aaes mine --tools --since 2026-11-01
+aaes mine --tools --anonymize --md prefix.md   # hash server and plugin names before sharing
+```
+
+It is read-only. To turn a server or plugin off, use `/mcp` or `/plugin` in Claude Code. A server that you use rarely but need also shows as "no calls", so decide per project. Token counts are estimates from bytes (calibrated from your transcripts; override with `--bytes-per-token`). Sub-agent requests are not counted.
+
 ## 13. Replay the shapers on your history: `aaes replay`
 
 `aaes replay` runs the current shapers over the tool results in your past Claude Code transcripts (read-only). It shows what each family would have saved. You do not need hooks installed, and nothing is changed or stored.

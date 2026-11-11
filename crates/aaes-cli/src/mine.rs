@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use aaes_transcripts::analyze::{Settings, Weights};
 use aaes_transcripts::{
-    Agent, Report, Session, analyze_sessions, claude, codex, discover, probe, websearch,
+    Agent, Report, Session, analyze_sessions, claude, codex, discover, probe, tools, websearch,
 };
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -50,6 +50,11 @@ pub struct MineArgs {
     /// Print a structural fingerprint (line/block types only) instead of a report.
     #[arg(long)]
     probe: bool,
+    /// Report the fixed request prefix instead (ADR-025): what the system prompt, tool
+    /// definitions and listings cost, by MCP server and plugin, and which servers had no calls.
+    /// Read-only; Claude Code 2.1.304 or later.
+    #[arg(long)]
+    tools: bool,
 }
 
 pub fn run(a: MineArgs) -> Result<()> {
@@ -110,6 +115,10 @@ pub fn run(a: MineArgs) -> Result<()> {
         return Ok(());
     }
 
+    if a.tools {
+        return tools_report(&a, &files);
+    }
+
     let sessions: Vec<Session> = files
         .par_iter()
         .flat_map_iter(|(agent, path)| -> Vec<Session> {
@@ -168,4 +177,166 @@ pub fn run(a: MineArgs) -> Result<()> {
         None => print!("{md}"),
     }
     Ok(())
+}
+
+/// `aaes mine --tools`: the fixed request prefix of Claude Code sessions (ADR-025).
+fn tools_report(a: &MineArgs, files: &[(Agent, PathBuf)]) -> Result<()> {
+    let since = a.since.as_deref();
+    let per_file: Vec<tools::FileTools> = files
+        .par_iter()
+        .filter(|(agent, _)| *agent == Agent::ClaudeCode)
+        .filter_map(|(_, path)| {
+            let f = File::open(path).ok()?;
+            let t = tools::FileTools::from_reader(BufReader::with_capacity(1 << 16, f));
+            let recent = since.is_none_or(|s| t.first_ts.as_deref().is_some_and(|ts| ts >= s));
+            (t.has_prefix() && recent).then_some(t)
+        })
+        .collect();
+    if per_file.is_empty() {
+        bail!(
+            "no sessions with request shapes found (Claude Code 2.1.304 or later writes them){}",
+            since.map(|s| format!(" since {s}")).unwrap_or_default()
+        );
+    }
+    let (bpt, samples) = tools::bytes_per_token(&per_file, a.bytes_per_token);
+    let s = tools::summarize(&per_file, &Weights::default(), bpt, samples, a.anonymize);
+
+    if let Some(p) = &a.json {
+        let groups: Vec<serde_json::Value> = s
+            .groups
+            .iter()
+            .map(|g| {
+                serde_json::json!({
+                    "kind": g.kind.label(), "name": g.name, "tokens": g.tokens.round(),
+                    "tools_loaded": g.tools_loaded, "tools_deferred": g.tools_deferred,
+                    "units": g.units.round(), "share": if s.input_units > 0.0 { g.units / s.input_units } else { 0.0 },
+                    "sessions": g.sessions, "calls": g.calls, "last_used": g.last_used,
+                })
+            })
+            .collect();
+        let v = serde_json::json!({
+            "sessions": s.sessions, "requests": s.requests, "since": a.since,
+            "input_units": s.input_units.round(), "prefix_units": s.prefix_units.round(),
+            "prefix_share": s.prefix_share(), "prefix_rewrites": s.prefix_rewrites,
+            "median_prefix_tokens": s.median_prefix_tokens.round(),
+            "bytes_per_token": s.bytes_per_token, "calibration_samples": s.calibration_samples,
+            "groups": groups,
+        });
+        let f = File::create(p).with_context(|| format!("creating {}", p.display()))?;
+        serde_json::to_writer_pretty(f, &v)?;
+        eprintln!("aaes: JSON report written to {}", p.display());
+    }
+    let md = tools_markdown(&s, a.since.as_deref(), a.top);
+    match &a.md {
+        Some(p) => {
+            std::fs::write(p, md).with_context(|| format!("writing {}", p.display()))?;
+            eprintln!("aaes: Markdown report written to {}", p.display());
+        }
+        None => print!("{md}"),
+    }
+    Ok(())
+}
+
+fn tools_markdown(s: &tools::Summary, since: Option<&str>, top: usize) -> String {
+    use std::fmt::Write;
+    let pct = |u: f64| {
+        if s.input_units > 0.0 {
+            100.0 * u / s.input_units
+        } else {
+            0.0
+        }
+    };
+    let mut o = String::new();
+    let _ = writeln!(o, "# AAES fixed request prefix (ADR-025)\n");
+    let _ = writeln!(
+        o,
+        "{} sessions, {} requests{}. Median prefix: {:.0} tokens ({:.2} bytes/token, {}).\n",
+        s.sessions,
+        s.requests,
+        since.map(|v| format!(" since {v}")).unwrap_or_default(),
+        s.median_prefix_tokens,
+        s.bytes_per_token,
+        if s.calibration_samples >= 5 {
+            format!("calibrated from {} fresh sessions", s.calibration_samples)
+        } else {
+            "default".to_string()
+        }
+    );
+    let _ = writeln!(
+        o,
+        "**The prefix is {:.1}% of cost-weighted input** ({:.0} of {:.0} units; the cache was rewritten on {} requests).\n",
+        100.0 * s.prefix_share(),
+        s.prefix_units,
+        s.input_units,
+        s.prefix_rewrites
+    );
+    let _ = writeln!(
+        o,
+        "| Group | Kind | Tokens/session | Tools (loaded/deferred) | Share of input | Calls | Last used |"
+    );
+    let _ = writeln!(o, "|---|---|---:|---:|---:|---:|---|");
+    for g in s.groups.iter().take(top) {
+        let tools = if g.tools_loaded + g.tools_deferred > 0 {
+            format!("{}/{}", g.tools_loaded, g.tools_deferred)
+        } else {
+            "-".to_string()
+        };
+        let calls = if matches!(g.kind, tools::Kind::System | tools::Kind::Listing) {
+            "-".to_string()
+        } else {
+            g.calls.to_string()
+        };
+        let last = g
+            .last_used
+            .as_deref()
+            .map_or("-", |t| t.get(..10).unwrap_or(t));
+        let _ = writeln!(
+            o,
+            "| {} | {} | {:.0} | {} | {:.1}% | {} | {} |",
+            g.name,
+            g.kind.label(),
+            g.tokens,
+            tools,
+            pct(g.units),
+            calls,
+            last
+        );
+    }
+    if s.groups.len() > top {
+        let _ = writeln!(
+            o,
+            "\n({} more groups; raise `--top` to see them.)",
+            s.groups.len() - top
+        );
+    }
+    let unused: Vec<&tools::Group> = s.unused().collect();
+    if unused.is_empty() {
+        let _ = writeln!(
+            o,
+            "\nEvery MCP server and plugin in the prefix had calls in this window."
+        );
+    } else {
+        let u: f64 = unused.iter().map(|g| g.units).sum();
+        let _ = writeln!(
+            o,
+            "\n## No calls in this window\n\nThese servers are in the prefix but had no calls ({:.1}% of cost-weighted input together):\n",
+            pct(u)
+        );
+        for g in &unused {
+            let _ = writeln!(
+                o,
+                "- {} ({:.0} tokens/session, {:.1}%)",
+                g.name,
+                g.tokens,
+                pct(g.units)
+            );
+        }
+        let _ = writeln!(
+            o,
+            "\nIf you do not need one, you can turn it off in Claude Code for the projects where it is unused \
+             (`/mcp` for MCP servers, `/plugin` for plugins). A server that is rarely used but needed shows here too. \
+             AAES changes no settings."
+        );
+    }
+    o
 }

@@ -11,6 +11,7 @@
 | 0.6 | 2026-11-04 | ADR-011 amended (M1 implementation): session state is JSON + files, with SQLite deferred to M4. ADR-021 implementation notes: a Windows handle-inheritance fix and `--port` in the ensure command. |
 | 0.7 | 2026-11-05 | Added ADR-024 (web-search admission control, PROPOSED): session-scoped result cache, single-flight, global pacing, adaptive rate with circuit breaker, optional redirect to a user-installed search tool. Gated on `aaes mine` evidence and a hook spike. |
 | 0.8 | 2026-11-11 | Added ADR-025 (tool-definition overhead, PROPOSED): measure the fixed prompt prefix and unused MCP servers or plugins with an opt-in, read-only `aaes mine --tools`, and advise the user. Request rewriting through an API proxy and automatic settings changes are rejected. |
+| 0.9 | 2026-11-11 | **ADR-025 accepted** after its spike: Claude Code 2.1.304+ writes the exact request prefix to the transcript (`api-request-shape`), so `aaes mine --tools` measures it from the text; the entry gate is met on the maintainer's history. The configured set comes from the prefix itself, not from settings files. |
 
 ## Reference architecture
 ```
@@ -235,7 +236,7 @@ If 3 or 4 fails, drop cache delivery (items 2–3) and keep pacing and the break
 **Why:** the provider limit is a shared budget. Spending it on duplicates and bursts, and burning turns on retries into an open limit, are the avoidable parts. The resident server already exists, so this is small, deterministic and local.
 **Tradeoffs:** a deny-framed cache hit may confuse the model (spike 3); a held request adds visible latency to the agent; cached results can be up to one TTL old, which matters for time-sensitive queries; the breaker may deny searches that would have succeeded just after a transient error (the half-open probe limits this).
 
-## ADR-025 — Tool-definition overhead: measure and advise, never rewrite (PROPOSED v0.8)
+## ADR-025 — Tool-definition overhead: measure and advise, never rewrite (ACCEPT v0.9)
 **Context:** every model request carries a fixed prefix: the system prompt, the tool definitions, and the lists of skills, agents and deferred tools that the host adds. MCP servers and plugins make this prefix larger. With prompt caching, most requests read the prefix from the cache at ×0.1. The prefix is written again (×1.25 or ×2) when the cache expires, after compaction, and when the model changes. Claude Code already defers most MCP tool schemas behind a tool search, so only their names stay in the prefix. AAES does not yet know how much of a user's cost-weighted input this prefix is.
 
 Hooks cannot change the request. `PostToolUse` changes only a tool result, and `SessionStart` can only add context. So AAES cannot remove tool definitions from the prompt through hooks.
@@ -255,6 +256,13 @@ Hooks cannot change the request. `PostToolUse` changes only a tool result, and `
 2. Whether the first-request estimate of the prefix agrees with a controlled run, with and without an MCP server, within ±10%.
 
 **Entry gate:** on the maintainer's history, the fixed prefix is at least 10% of cost-weighted input, *and* at least one configured server or plugin had no calls in 30 days. Otherwise the ADR stays PROPOSED and AAES keeps its focus on tool results.
+
+**Spike result (2026-11-11), ACCEPTED:**
+1. Claude Code 2.1.304 and later write each distinct request prefix to the transcript as an `api-request-shape` record: the exact `system` and `tools` arrays, keyed by `shapeHash`, which every `api-request` record references. Tools with `defer_loading` are not sent to the model; their names come in the `deferred_tools_delta` listing. The skill listing, agent listing and MCP server instructions come as `skill_listing`, `agent_listing_delta` and `mcp_instructions_delta` attachments (deltas; compaction re-adds them, so AAES keeps the current state by name). So the prefix is measured from its text, and attributed to each server exactly. The first-request estimate of the original design is not needed.
+2. Only bytes-to-tokens remains an estimate. It is calibrated from the first request of fresh sessions (prefix bytes / input tokens, a lower bound of the true ratio), median of the samples; `--bytes-per-token` overrides it. A controlled with/without-server run is not needed for the attribution, which is exact in bytes.
+3. Entry gate: met on the maintainer's history (the prefix is above 10% of cost-weighted input, and several configured servers and plugins had no calls).
+
+**Implementation:** `aaes mine --tools` (`aaes_transcripts::tools`). The configured set is what the prefix contains, so AAES reads no settings files. Groups: built-in tools, each MCP server, each plugin server, the system prompt, the skill and agent listings. Per group: tokens per session, loaded/deferred tools, share of cost-weighted input (cache read on most requests, cache write when a request rewrote the cache), calls and last use. Servers with no calls are listed with a pointer to `/mcp` and `/plugin`; AAES changes nothing. Main-thread requests only; sub-agent prefixes are not counted yet.
 
 **Why:** the prefix can be a real part of the bill for users with many servers, but only the user can safely remove a server. A measured, read-only report is in scope (FUN-022 `aaes mine`); rewriting requests is not.
 **Tradeoffs:** advice only, so the saving depends on the user acting on it. The prefix estimate is indirect (from usage numbers, not from the prompt text). A server that is rarely used but needed will show as unused, so the advice lists items and never says "remove".

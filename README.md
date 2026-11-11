@@ -17,6 +17,7 @@ aaes mine                               # reads ~/.claude/projects and ~/.codex/
 aaes mine --since 2026-09-01 --md report.md --json report.json
 aaes mine --probe                       # structure check: line/block types only
 aaes mine --anonymize                   # hash unknown program names before sharing
+aaes mine --tools                       # what the system prompt, tool definitions and MCP servers cost
 aaes replay                             # what the shapers would have saved on your Claude Code history
 ```
 The report contains aggregate numbers and command-family names only, never transcript content. It ends with a go/no-go verdict: tool results ≥ 20% of cost-weighted input means GO.
