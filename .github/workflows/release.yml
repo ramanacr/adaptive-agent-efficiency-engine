@@ -181,6 +181,9 @@ jobs:
   clean-install:
     name: clean install ${{ matrix.target }} on ${{ matrix.os }}
     needs: package
+    # Explicit condition: `sign-windows` upstream is skipped while signing is off, and a job
+    # without one would be skipped with it.
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -207,7 +210,7 @@ jobs:
   draft:
     name: draft release
     needs: clean-install
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ !cancelled() && needs.clean-install.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write      # draft release
