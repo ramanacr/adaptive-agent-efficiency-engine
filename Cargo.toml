@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/aaes-core", "crates/aaes-runtime", "crates/aaes-cli", "crates/aaes-transcripts", "spikes/hook-probe"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -11,9 +11,9 @@ repository = "https://github.com/ramanacr/adaptive-agent-efficiency-engine"
 authors = ["Ramana Reddy Chamakura"]
 
 [workspace.dependencies]
-aaes-core = { path = "crates/aaes-core", version = "0.1.1" }
-aaes-runtime = { path = "crates/aaes-runtime", version = "0.1.1" }
-aaes-transcripts = { path = "crates/aaes-transcripts", version = "0.1.1" }
+aaes-core = { path = "crates/aaes-core", version = "0.1.2" }
+aaes-runtime = { path = "crates/aaes-runtime", version = "0.1.2" }
+aaes-transcripts = { path = "crates/aaes-transcripts", version = "0.1.2" }
 getrandom = "0.3"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
