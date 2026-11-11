@@ -146,7 +146,14 @@ fn handle_conn(stream: TcpStream, rt: &Runtime, token: &str) {
             json!({ "method": req.method, "path": req.path, "status": &status[..3], "bytes_in": req.body.len(), "bytes_out": body.len(), "dur_us": t0.elapsed().as_micros() as u64, "sent": sent }),
         );
         if !sent {
-            log::warn(
+            // `serve --ensure` probes health with a short timeout and gives up while a fresh
+            // binary is still starting; a late answer to a closed probe is expected, not a fault.
+            let log_fn = if req.path == "/aaes/v1/health" {
+                log::debug
+            } else {
+                log::warn
+            };
+            log_fn(
                 "server",
                 "failed to send response (client closed early?)",
                 json!({ "path": req.path }),
