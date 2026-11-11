@@ -66,9 +66,10 @@ case "$target" in
   *apple*)
     otool -L "$aaes"
     # Dependency lines are indented; a universal binary has one unindented header per slice.
-    if otool -L "$aaes" | grep '^[[:space:]]' | grep -v -e '/usr/lib/' -e '/System/Library/' | grep -q .; then
-      fail "links a non-system library"
-    fi
+    deps=$(otool -L "$aaes" | awk '/^[ \t]/ { print $1 }')
+    bad=$(printf '%s\n' "$deps" | grep -v -e '^/usr/lib/' -e '^/System/Library/' -e '^$' || true)
+    [ -n "$deps" ] || fail "otool listed no dependencies"
+    [ -z "$bad" ] || fail "links a non-system library: $(printf '%s' "$bad" | od -c | head -n 5)"
     lipo -info "$aaes" ;;
 esac
 
