@@ -150,7 +150,18 @@ mod linux {
         format!("aaes:artifact-key:{id}")
     }
 
+    /// The user keyring, linked into this process's own keyring first. The kernel lets a process
+    /// read a key only when it "possesses" it (reaches it from its thread, process or session
+    /// keyring). A desktop login session links the user keyring into the session keyring, but a
+    /// systemd service or CI runner often has a private session keyring that does not. The process
+    /// keyring is private to this process and ends with it, so the link changes nothing for others.
     fn ring() -> Result<KeyRing, KeyError> {
+        static LINK: std::sync::Once = std::sync::Once::new();
+        LINK.call_once(|| {
+            if let Ok(p) = KeyRing::from_special_id(KeyRingIdentifier::Process, true) {
+                let _ = p.link_keyring_id(KeyRingIdentifier::User);
+            }
+        });
         KeyRing::from_special_id(KeyRingIdentifier::User, true)
     }
 

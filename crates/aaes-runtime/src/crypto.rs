@@ -504,9 +504,18 @@ mod tests {
         let k1 = load_or_create(&h, true).unwrap();
         let file = std::fs::read(h.join(KEY_FILE)).unwrap();
         let payload = file.strip_prefix(KEY_MAGIC).unwrap();
-        let id = keystore_id(payload)
-            .expect("key file holds a keystore reference")
-            .to_string();
+        let Some(id) = keystore_id(payload).map(str::to_string) else {
+            // Say why the keystore was not used.
+            let probe = "00000000000000000000000000000000";
+            let put = keystore::put(probe, b"probe");
+            let get = match keystore::get(probe) {
+                Lookup::Found(_) => "found".to_string(),
+                Lookup::Missing => "missing".to_string(),
+                Lookup::Unavailable(e) => format!("unavailable: {e}"),
+            };
+            keystore::delete(probe);
+            panic!("key file holds no keystore reference; put: {put:?}; get: {get}");
+        };
         assert!(!file.windows(32).any(|w| w == k1), "key not in the file");
         assert_eq!(load_or_create(&h, true).unwrap(), k1, "same key on reload");
 
