@@ -65,7 +65,8 @@ case "$target" in
     case "$desc" in *"statically linked"*|*"static-pie linked"*) ;; *) fail "not statically linked" ;; esac ;;
   *apple*)
     otool -L "$aaes"
-    if otool -L "$aaes" | tail -n +2 | grep -v -e '/usr/lib/' -e '/System/Library/' | grep -q .; then
+    # Dependency lines are indented; a universal binary has one unindented header per slice.
+    if otool -L "$aaes" | grep '^[[:space:]]' | grep -v -e '/usr/lib/' -e '/System/Library/' | grep -q .; then
       fail "links a non-system library"
     fi
     lipo -info "$aaes" ;;
