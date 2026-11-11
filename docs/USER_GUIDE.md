@@ -263,7 +263,19 @@ On Windows the folder is outside `AppData` on purpose. Apps installed as MSIX pa
 | Stored outputs | `sessions/<id>/artifacts/*.bin` | Encrypted |
 | Logs | `logs/aaes-YYYY-MM-DD.jsonl` | Kept 14 days |
 
-**Encryption at rest.** Stored outputs are encrypted with ChaCha20-Poly1305. The key is a random 256-bit key in `artifact-key`. On Windows, DPAPI protects the key for the current user. On macOS and Linux, the key file is readable only by your user (mode 0600). Keychain and libsecret support are planned. If the key cannot be read (for example after a profile reset, or on another machine), AAES makes a new key, and older handles read as expired.
+**Encryption at rest.** Stored outputs are encrypted with ChaCha20-Poly1305. The key is a random 256-bit key in `artifact-key`. The OS protects the key:
+
+| OS | Where the key is |
+|---|---|
+| Windows | In `artifact-key`, encrypted by DPAPI for the current user. |
+| macOS | In the login Keychain (item `aaes`, account `artifact-key-<id>`). `artifact-key` holds only the id. |
+| Linux | In the kernel user keyring (`keyctl`, description `aaes:artifact-key:<id>`). `artifact-key` holds only the id. No desktop keyring service is needed, so this also works on servers and in WSL 2. The kernel drops the keyring at reboot (or when your last session ends). AAES then makes a new key, and older handles read as expired. |
+
+If no keystore is usable (for example in a container that blocks `keyctl`, or with a locked or missing Keychain), the key stays in `artifact-key`, readable only by your user (mode 0600). AAES moves it into the keystore when one becomes usable. To keep the key in the file, set `AAES_KEY_STORE=file`.
+
+The keystore protects the key in a disk image or a backup of your home folder. It does not protect against programs that run as your user. The Keychain item allows any application of your user to read it, so an AAES upgrade never shows a Keychain prompt.
+
+If the key cannot be read (for example after a profile reset, or on another machine), AAES makes a new key, and older handles read as expired. If the keystore cannot answer at the moment (for example a locked Keychain), AAES keeps the key and passes outputs through unchanged until it can.
 
 **Retention.** AAES deletes a session's state and stored outputs `retention_hours` after the session's last activity (default 24).
 
@@ -335,6 +347,7 @@ The server reads `config.json` when it starts. After a change, restart it: `aaes
 |---|---|
 | `aaes disable` / `aaes enable` | All sessions, at once. Hooks stay installed; every result passes through. |
 | `AAES_RAW=1` | `command` mode only: set it in the environment of Claude Code. |
+| `AAES_KEY_STORE=file` | macOS and Linux: keep the artifact key in the 0600 file, not in the OS keystore. |
 | `aaes uninstall` | Removes the hooks. |
 
 ## 11. Troubleshooting

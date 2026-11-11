@@ -69,7 +69,7 @@ The clean-install test runs in the release workflow, before the draft release is
 5. A hook call shapes a large Grep result with exact totals, and `aaes show` returns an omitted line from the encrypted store.
 6. `aaes report --json` counts the session, `aaes uninstall` removes the hooks, and the AAES log has no errors or warnings.
 
-A failure stops the release: no draft is created. The test does not run Claude Code. Encryption at rest uses DPAPI on Windows and a mode-0600 key file on macOS and Linux (see the user guide, section 8).
+A failure stops the release: no draft is created. The test does not run Claude Code. Encryption at rest keeps the key with DPAPI on Windows, in the login Keychain on macOS and in the kernel user keyring on Linux, with a mode-0600 file as the fallback (see the user guide, section 8). The Linux runs require the kernel keyring. The macOS run reports where the key is but does not require the Keychain, because the test uses an empty home folder; the unit test `os_keystore_holds_the_key_and_takes_over_a_plain_file` checks the Keychain in CI.
 
 ## 3. Rust toolchain
 

@@ -13,6 +13,8 @@ pub mod config;
 mod crypto;
 pub mod events;
 pub mod hook;
+#[cfg(not(windows))]
+mod keystore;
 pub mod log;
 pub mod paths;
 pub mod server;

@@ -29,6 +29,9 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked
       - run: cargo test --workspace --locked
+        env:
+          # Also run the real OS keystore test (macOS Keychain, Linux kernel keyring).
+          AAES_TEST_KEYSTORE: '1'
 
   msrv:
     name: msrv (1.85)

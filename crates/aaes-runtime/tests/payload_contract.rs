@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use aaes_runtime::{Runtime, hook, paths};
+use aaes_runtime::{Runtime, hook, paths, store};
 use serde_json::{Value, json};
 
 fn big_ts() -> String {
@@ -115,6 +115,8 @@ fn observed_payload_shapes_get_the_expected_decision() {
             }
         }
     }
+    // Also removes the OS keystore entry on macOS and Linux.
+    let _ = store::remove_key(&home);
     let _ = std::fs::remove_dir_all(&home);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

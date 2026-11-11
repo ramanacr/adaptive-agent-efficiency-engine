@@ -17,5 +17,12 @@ chacha20poly1305 = { version = "0.10", default-features = false, features = ["al
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 
+# SEC-012 key wrapping: macOS Keychain (native read) and the Linux kernel user keyring.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+linux-keyutils = "0.2"
+
 [lints]
 workspace = true

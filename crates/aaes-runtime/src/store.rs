@@ -47,6 +47,12 @@ pub fn save(home: &Path, session_id: &str, handle: &str, raw: &str) -> std::io::
     paths::write_private(&index_path(home, handle), file.to_string_lossy().as_bytes())
 }
 
+/// Delete the artifact key of `home` (its OS keystore entry and the key file). Stored artifacts of
+/// that home become unreadable.
+pub fn remove_key(home: &Path) -> std::io::Result<()> {
+    crypto::remove_key(home)
+}
+
 /// Load raw output by handle. `None` if unknown, invalid, expired or unreadable (key lost).
 pub fn load(home: &Path, handle: &str) -> Option<String> {
     if !valid_handle(handle) {

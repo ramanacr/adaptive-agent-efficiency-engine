@@ -13,7 +13,7 @@
 #   3. `aaes --version` prints the archive's version (macOS: also the x86_64 slice, via Rosetta);
 #   4. `aaes init --mode command` writes hooks into a temporary settings file;
 #   5. a hook call (command mode) shapes a large Grep result, and `aaes show` returns the
-#      lines it left out from the encrypted store;
+#      lines it left out from the encrypted store (Linux: key in the kernel keyring);
 #   6. `aaes report --json` counts the event, and `aaes uninstall` removes the hooks.
 set -euo pipefail
 
@@ -108,6 +108,13 @@ handle=$(printf '%s' "$resp" | grep -o 'aaes show h_[a-z0-9]*' | head -n1 | cut 
 [ -n "$handle" ] || fail "no handle in the shaped result"
 shown=$("$aaes" show "$handle" --grep 'module29/file29.ts:40:')
 case "$shown" in *"value40 = compute(input, 40)"*) ;; *) fail "aaes show did not return the omitted line" ;; esac
+# Where the artifact key lives (SEC-012). Linux must use the kernel keyring; on macOS the
+# fresh HOME may hide the login Keychain, so the result is reported, not required.
+keyfile=$(head -c 12 "$AAES_HOME/artifact-key" | tr -c '[:print:]' '?')
+echo "key file starts with: $keyfile"
+case "$target" in
+  *linux*) [ "$keyfile" = "AAESKEY1KS1:" ] || fail "artifact key is not in the kernel keyring" ;;
+esac
 
 step "6. report and uninstall"
 report=$("$aaes" report --json)
