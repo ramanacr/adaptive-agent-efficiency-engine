@@ -166,11 +166,20 @@ def setup_arm(arm: str, run: Path, repo: Path, aaes: str, env: dict) -> None:
             raise RuntimeError(f"aaes init failed: {out}")
 
 
-def transcripts(cfg: Path) -> list[Path]:
-    return sorted((cfg / "projects").rglob("*.jsonl")) if (cfg / "projects").exists() else []
+def transcripts(projects: Path, session_id: str | None) -> list[tuple[Path, Path]]:
+    """(file, path relative to `projects`) of the run's transcripts. With a shared projects folder
+    (subscription auth), only the session's own file and its sub-agent folder."""
+    if not projects.exists():
+        return []
+    if session_id is None:
+        files = projects.rglob("*.jsonl")
+    else:
+        files = [f for f in projects.rglob("*.jsonl")
+                 if f.stem == session_id or session_id in f.parts]
+    return sorted((f, f.relative_to(projects)) for f in files)
 
 
-def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str) -> dict:
+def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict:
     run = work / "runs" / t["id"] / f"{arm}-r{rep}"
     rmtree(run)
     run.mkdir(parents=True)
@@ -179,8 +188,13 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str) -> dict:
     env = dict(os.environ)
     for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "AAES_HOOK_TOKEN", "AAES_RAW"):
         env.pop(k, None)
+    if a.auth == "api":
+        env["CLAUDE_CONFIG_DIR"] = str(run / "cfg")
+    else:
+        # Subscription: the user's own login and projects folder; user settings, hooks, plugins
+        # and MCP servers are left out below.
+        env.pop("CLAUDE_CONFIG_DIR", None)
     env.update({
-        "CLAUDE_CONFIG_DIR": str(run / "cfg"),
         "AAES_HOME": str(run / "aaes-home"),
         "DISABLE_AUTOUPDATER": "1",
         "DISABLE_TELEMETRY": "1",
@@ -191,7 +205,9 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str) -> dict:
     cmd = [a.claude, "-p", prompt, "--model", a.model, "--output-format", "json",
            "--max-turns", str(a.max_turns), "--allowedTools", TOOLS,
            "--settings", str(run / "cfg" / "settings.json"), "--strict-mcp-config"]
-    child = dict(env, ANTHROPIC_API_KEY=key)
+    if a.auth == "subscription":
+        cmd += ["--setting-sources", "project,local"]
+    child = dict(env, ANTHROPIC_API_KEY=key) if key else env
     t0 = time.time()
     try:
         p = subprocess.run(cmd, cwd=repo, env=child, capture_output=True, text=True,
@@ -222,8 +238,13 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str) -> dict:
     diff_lines = sum(int(x[0]) + int(x[1]) for x in changed if x[0].isdigit() and x[1].isdigit())
 
     tdir = run / "transcripts"
-    for f in transcripts(run / "cfg"):
-        dst = tdir / f.relative_to(run / "cfg" / "projects")
+    if a.auth == "api":
+        found = transcripts(run / "cfg" / "projects", None)
+    else:
+        home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+        found = transcripts(home / "projects", res.get("session_id")) if res.get("session_id") else []
+    for f, rel in found:
+        dst = tdir / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(f, dst)
     report, hook_errors = None, None
@@ -270,6 +291,9 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=1200, help="seconds per agent run")
     ap.add_argument("--seed", type=int, default=20261113)
     ap.add_argument("--jobs", type=int, default=3, help="runs at the same time")
+    ap.add_argument("--auth", choices=["api", "subscription"], default="api",
+                    help="api: isolated config + AAES_ANTHROPIC_API_KEY; subscription: your login, "
+                         "user settings/hooks/MCP left out, transcripts under ~/.claude/projects")
     ap.add_argument("--keep-repo", action="store_true")
     ap.add_argument("--prepare-only", action="store_true", help="build snapshots, run nothing")
     a = ap.parse_args()
@@ -282,7 +306,7 @@ def main() -> int:
     if a.prepare_only:
         print("snapshots ready")
         return 0
-    key = api_key()
+    key = api_key() if a.auth == "api" else None
     res_path = a.work / "results" / "runs.jsonl"
     res_path.parent.mkdir(parents=True, exist_ok=True)
     done = []
@@ -332,10 +356,15 @@ def main() -> int:
             state["spent"] += r["cost_usd"] or 0
             if r["cost_usd"]:
                 costs.append(r["cost_usd"])
-            with res_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(r) + "\n")
-            if r["is_error"] and "Credit balance" in (r["result"] or ""):
-                state["stop"] = "API credit exhausted"
+            msg = (r["result"] or "").lower()
+            blocked = r["is_error"] and any(
+                x in msg for x in ("credit balance", "authenticate", "usage limit", "rate limit"))
+            if blocked:
+                # Not a task outcome: stop, and leave the run out so a resume retries it.
+                state["stop"] = f"agent could not run: {r['result'][:120]}"
+            else:
+                with res_path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(r) + "\n")
         print(f"    r{rep} {t['id']} {arm}: success={r['success']} cost=${r['cost_usd'] or 0:.3f} "
               f"turns={r['num_turns']} wall={r['wall_s']}s spent=${state['spent']:.2f} "
               f"{r['terminal_reason'] or ''}", flush=True)
