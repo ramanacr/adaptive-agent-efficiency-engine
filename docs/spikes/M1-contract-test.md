@@ -44,6 +44,7 @@ The Claude Code version is pinned in `tests/contract/claude-code.version`. A dif
 ```bash
 pwsh scripts/contract-test.ps1 -Aaes target/release/aaes -Auth subscription   # your normal login, user settings/plugins/MCP left out
 pwsh scripts/contract-test.ps1 -Aaes target/release/aaes                       # isolated CLAUDE_CONFIG_DIR + API key ($AAES_ANTHROPIC_API_KEY)
+pwsh scripts/contract-test.ps1 -Claude <path to another claude.exe>          # e.g. the build bundled with the desktop app
 ```
 
 First run: Claude Code 2.1.233, `haiku`, subscription auth: **29/29 checks pass, 0 warnings**, about USD 0.35 as reported by Claude Code. It is not in CI, because it needs a Claude Code login. Run it after each Claude Code update and before a release.

@@ -35,6 +35,9 @@
 param(
     # aaes binary under test. Default: `aaes` on PATH.
     [string]$Aaes = 'aaes',
+    # Claude Code binary to test. Default: `claude` on PATH. Use it for another build, such as
+    # the one bundled with the desktop app.
+    [string]$Claude = 'claude',
     # Scratch folder for fixtures, isolated config and results. Default: a new temp folder.
     [string]$WorkDir = (Join-Path ([IO.Path]::GetTempPath()) "aaes-contract-$(Get-Date -Format yyyyMMdd-HHmmss)"),
     [string]$Model = 'haiku',
@@ -61,7 +64,7 @@ function Resolve-Exe([string]$name) {
 }
 
 $Aaes = Resolve-Exe $Aaes
-$claude = Resolve-Exe 'claude'
+$claude = Resolve-Exe $Claude
 $key = $null
 if ($Auth -eq 'api') {
     $key = [Environment]::GetEnvironmentVariable($ApiKeyEnv)
