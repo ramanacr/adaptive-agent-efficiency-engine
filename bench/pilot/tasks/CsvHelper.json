@@ -1,0 +1,117 @@
+[
+  {
+    "id": "CsvHelper-f6683d001",
+    "repo": "CsvHelper",
+    "url": "https://github.com/JoshClose/CsvHelper",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "852bd465e0d460eb60013abdc07fff8f68f68a59",
+    "fix": "f6683d001a0593b4976cfee82a7288052106d5dd",
+    "test_files": [
+      "tests/CsvHelper.Tests/Mocks/ReaderRowMock.cs",
+      "tests/CsvHelper.Tests/TypeConversion/NullableConverterTests.cs"
+    ],
+    "src_files": [
+      "src/CsvHelper/TypeConversion/DefaultTypeConverter.cs"
+    ],
+    "src_lines": 55,
+    "setup": "if exist global.json del global.json",
+    "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~NullableConverterTests|FullyQualifiedName~ReaderRowMock\"",
+    "report": "Fix UseDefaultOnConversionFailure behavior for nullable types when default value is null"
+  },
+  {
+    "id": "CsvHelper-f9e5fa47d",
+    "repo": "CsvHelper",
+    "url": "https://github.com/JoshClose/CsvHelper",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "7dbb3fe710466ec2f573f81e19c7130ec1c7a365",
+    "fix": "f9e5fa47d7f53c9efa5b5509f438219b8495f7bb",
+    "test_files": [
+      "tests/CsvHelper.Tests/Dynamic/FastDynamicTests.cs"
+    ],
+    "src_files": [
+      "src/CsvHelper/FastDynamicObject.cs"
+    ],
+    "src_lines": 43,
+    "setup": "if exist global.json del global.json",
+    "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~FastDynamicTests\"",
+    "report": "Added nullable to FastDynamicObject."
+  },
+  {
+    "id": "CsvHelper-d50510ed5",
+    "repo": "CsvHelper",
+    "url": "https://github.com/JoshClose/CsvHelper",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "f85b1a22847559338d5634989c18d1f6f8b15d13",
+    "fix": "d50510ed595863ebe05dbbdd9b69bc54e1fc00bb",
+    "test_files": [
+      "tests/CsvHelper.Tests/TypeConversion/GuidConverterTests.cs"
+    ],
+    "src_files": [
+      "src/CsvHelper/TypeConversion/GuidConverter.cs"
+    ],
+    "src_lines": 6,
+    "setup": "if exist global.json del global.json",
+    "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~GuidConverterTests\"",
+    "report": "\ud83d\udd28 GuidConverter should be consistent"
+  },
+  {
+    "id": "CsvHelper-3aea6a06e",
+    "repo": "CsvHelper",
+    "url": "https://github.com/JoshClose/CsvHelper",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "3f5054a84a730d808eded308241b856a1dc41444",
+    "fix": "3aea6a06ed9bcee8c4b869dc6ce74ce80f9edc2b",
+    "test_files": [
+      "tests/CsvHelper.Tests/Mappings/Attribute/AllowCommentsTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/BufferSizeTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/CacheFieldsTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/CommentTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/CountBytesTest.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/DelimiterTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/DetectColumnCountChangesTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/DetectDelimiterTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/DetectDelimiterValuesTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/EncodingTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/EscapeTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/ExceptionMessagesContainRawDataTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/HasHeaderRecordTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/IgnoreBlankLinesTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/IgnoreReferencesTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/IncludePrivateMembersTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/InjectionCharactersTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/InjectionEscapeCharacterTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/InjectionOptionsTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/LineBreakInQuotedFieldIsBadDataTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/MaxFieldSizeTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/MemberTypesTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/ModeTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/NewLineTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/ProcessFieldBufferSizeTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/QuoteTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/TrimOptionsTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/UseNewObjectForNullReferenceMembersTests.cs",
+      "tests/CsvHelper.Tests/Mappings/Attribute/WhiteSpaceCharsTests.cs",
+      "tests/CsvHelper.Tests/Mappings/ConstructorParameter/CultureInfoAttributeTests.cs"
+    ],
+    "src_files": [
+      "src/CsvHelper/Configuration/Attributes/CultureInfoAttribute.cs",
+      "src/CsvHelper/Configuration/CsvConfiguration.cs"
+    ],
+    "src_lines": 26,
+    "setup": "if exist global.json del global.json",
+    "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~AllowCommentsTests|FullyQualifiedName~BufferSizeTests|FullyQualifiedName~CacheFieldsTests|FullyQualifiedName~CommentTests|FullyQualifiedName~CountBytesTest|FullyQualifiedName~CultureInfoAttributeTests|FullyQualifiedName~DelimiterTests|FullyQualifiedName~DetectColumnCountChangesTests|FullyQualifiedName~DetectDelimiterTests|FullyQualifiedName~DetectDelimiterValuesTests|FullyQualifiedName~EncodingTests|FullyQualifiedName~EscapeTests|FullyQualifiedName~ExceptionMessagesContainRawDataTests|FullyQualifiedName~HasHeaderRecordTests|FullyQualifiedName~IgnoreBlankLinesTests|FullyQualifiedName~IgnoreReferencesTests|FullyQualifiedName~IncludePrivateMembersTests|FullyQualifiedName~InjectionCharactersTests|FullyQualifiedName~InjectionEscapeCharacterTests|FullyQualifiedName~InjectionOptionsTests|FullyQualifiedName~LineBreakInQuotedFieldIsBadDataTests|FullyQualifiedName~MaxFieldSizeTests|FullyQualifiedName~MemberTypesTests|FullyQualifiedName~ModeTests|FullyQualifiedName~NewLineTests|FullyQualifiedName~ProcessFieldBufferSizeTests|FullyQualifiedName~QuoteTests|FullyQualifiedName~TrimOptionsTests|FullyQualifiedName~UseNewObjectForNullReferenceMembersTests|FullyQualifiedName~WhiteSpaceCharsTests\"",
+    "report": "Changed name of CsvConfiguration.FromType to FromAttributes."
+  }
+]

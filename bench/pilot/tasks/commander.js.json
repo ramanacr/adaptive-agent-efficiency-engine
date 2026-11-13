@@ -1,0 +1,170 @@
+[
+  {
+    "id": "commander.js-1536d5bb9",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "c807ce933836d0d99719bac82ee477f3d7eb4268",
+    "fix": "1536d5bb9da38d1d94926aedfa31c8ece1f7dce5",
+    "test_files": [
+      "tests/options.optsWithGlobals.test.js"
+    ],
+    "src_files": [
+      "lib/command.js"
+    ],
+    "src_lines": 2,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "node --test tests/options.optsWithGlobals.test.js",
+    "report": "Fix option source masking when source is unknown (aka undefined)"
+  },
+  {
+    "id": "commander.js-46c6f6b12",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "3b4365777fe3df372c67226054b1021279b629cb",
+    "fix": "46c6f6b12829496c1bab71ab11fe00f140d4b3ff",
+    "test_files": [
+      "tests/helpGroup.test.js"
+    ],
+    "src_files": [
+      "lib/help.js"
+    ],
+    "src_lines": 8,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "node --test tests/helpGroup.test.js",
+    "report": "Preserve help option groups when flags conflict"
+  },
+  {
+    "id": "commander.js-a9f06ddfe",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "ae60352af7d216595055ef744111788b97f7416b",
+    "fix": "a9f06ddfe1a97c932579370a1b4e727f7fa511a7",
+    "test_files": [
+      "tests/options.variadic.test.js"
+    ],
+    "src_files": [
+      "lib/option.js"
+    ],
+    "src_lines": 2,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "node --test tests/options.variadic.test.js",
+    "report": "Recognise Unicode variadic option placeholders"
+  },
+  {
+    "id": "commander.js-a6bcd2ec1",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "c3ffcfcdac9237cb446ae0acc5b228380e6ba52a",
+    "fix": "a6bcd2ec188dd684c11076ea74747b46eb32f44c",
+    "test_files": [
+      "tests/negatives.test.js"
+    ],
+    "src_files": [
+      "lib/command.js"
+    ],
+    "src_lines": 2,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "node --test tests/negatives.test.js",
+    "report": "Accept uppercase E exponent in negative number args"
+  },
+  {
+    "id": "commander.js-63eed4aa0",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "2e96cd388764064fe271f7f452d0dff780355b42",
+    "fix": "63eed4aa05435575d515311bb5efaf6d88b6be84",
+    "test_files": [
+      "tests/options.bool.combo.test.js"
+    ],
+    "src_files": [
+      "lib/command.js"
+    ],
+    "src_lines": 34,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npx jest tests/options.bool.combo.test.js",
+    "report": "Make order not matter for adding combo positive/negative options"
+  },
+  {
+    "id": "commander.js-2e96cd388",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "395cf7145fe28122f5a69026b310e02df114f907",
+    "fix": "2e96cd388764064fe271f7f452d0dff780355b42",
+    "test_files": [
+      "tests/command.exitOverride.test.js"
+    ],
+    "src_files": [
+      "lib/command.js"
+    ],
+    "src_lines": 4,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npx jest tests/command.exitOverride.test.js",
+    "report": "List excess arguments in error message"
+  },
+  {
+    "id": "commander.js-f6302de32",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "68199e64b31851839c03dff1567a81d7714baa08",
+    "fix": "f6302de32c773e9f0d3bb71e257d308885af3603",
+    "test_files": [
+      "tests/negatives.test.js"
+    ],
+    "src_files": [
+      "lib/command.js"
+    ],
+    "src_lines": 28,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npx jest tests/negatives.test.js",
+    "report": "Allow negative numbers as optional optional arguments and command arguments when unambiguous"
+  },
+  {
+    "id": "commander.js-68199e64b",
+    "repo": "commander.js",
+    "url": "https://github.com/tj/commander.js",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "672e3806c68421f91b3a1f628f6207b8b26d1a2c",
+    "fix": "68199e64b31851839c03dff1567a81d7714baa08",
+    "test_files": [
+      "tests/command.configureOutput.test.js"
+    ],
+    "src_files": [
+      "lib/command.js"
+    ],
+    "src_lines": 6,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npx jest tests/command.configureOutput.test.js",
+    "report": "Make .configureOutput() create copy of settings instead of in-place change"
+  }
+]

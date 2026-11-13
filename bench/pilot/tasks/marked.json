@@ -1,0 +1,181 @@
+[
+  {
+    "id": "marked-738ebebc8",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "2d3b47fa217a06f9a360d86ebf0f766d19949621",
+    "fix": "738ebebc835ebc97fe82e3321bc7f91f638c531f",
+    "test_files": [
+      "test/specs/new/html_block_tabs.html",
+      "test/specs/new/html_block_tabs.md"
+    ],
+    "src_files": [
+      "src/rules.ts"
+    ],
+    "src_lines": 12,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Allow tabs between the tag name and attributes of an html block"
+  },
+  {
+    "id": "marked-2d3b47fa2",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "1ae2ac9d7f4d592568a92867deb76892ff35434f",
+    "fix": "2d3b47fa217a06f9a360d86ebf0f766d19949621",
+    "test_files": [
+      "test/specs/new/blockquote_tab_in_fence.html",
+      "test/specs/new/blockquote_tab_in_fence.md"
+    ],
+    "src_files": [
+      "src/Tokenizer.ts",
+      "src/rules.ts"
+    ],
+    "src_lines": 7,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Keep a tab after the block quote marker's space literal"
+  },
+  {
+    "id": "marked-e4ab77f6e",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "219492a64e5cd0a7f264678b7a80bdd2201c970b",
+    "fix": "e4ab77f6e46d478cfed8697c308dddc60b9ddf99",
+    "test_files": [
+      "test/specs/new/list_item_paragraph_interrupt.html",
+      "test/specs/new/list_item_paragraph_interrupt.md"
+    ],
+    "src_files": [
+      "src/Lexer.ts",
+      "src/Tokenizer.ts",
+      "src/rules.ts"
+    ],
+    "src_lines": 15,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Feat: add lastToken to lexer state"
+  },
+  {
+    "id": "marked-219492a64",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "b81a00a2e332a47e0ccc0ff376babfe78392f321",
+    "fix": "219492a64e5cd0a7f264678b7a80bdd2201c970b",
+    "test_files": [
+      "test/specs/new/em_after_other_delimiter.html",
+      "test/specs/new/em_after_other_delimiter.md"
+    ],
+    "src_files": [
+      "src/Tokenizer.ts"
+    ],
+    "src_lines": 6,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Let emphasis open after the other delimiter character"
+  },
+  {
+    "id": "marked-b81a00a2e",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "7bfa1f70e8756c6ee3e47c235a34556edbf48b49",
+    "fix": "b81a00a2e332a47e0ccc0ff376babfe78392f321",
+    "test_files": [
+      "test/unit/marked.test.js"
+    ],
+    "src_files": [
+      "src/Parser.ts"
+    ],
+    "src_lines": 4,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Preserve zero from named extension renderers"
+  },
+  {
+    "id": "marked-7bfa1f70e",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "4cb767a966b496eb74cb2779ff2b8d0054a2a035",
+    "fix": "7bfa1f70e8756c6ee3e47c235a34556edbf48b49",
+    "test_files": [
+      "test/specs/new/em_in_angle_brackets.html",
+      "test/specs/new/em_in_angle_brackets.md"
+    ],
+    "src_files": [
+      "src/Lexer.ts"
+    ],
+    "src_lines": 37,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Let emphasis open and close in angle brackets that are not html"
+  },
+  {
+    "id": "marked-4cb767a96",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "ed54c541ef75740634a09233c685a5bba1e92944",
+    "fix": "4cb767a966b496eb74cb2779ff2b8d0054a2a035",
+    "test_files": [
+      "test/specs/new/list_lazy_after_nested_block.html",
+      "test/specs/new/list_lazy_after_nested_block.md"
+    ],
+    "src_files": [
+      "src/Tokenizer.ts",
+      "src/rules.ts"
+    ],
+    "src_lines": 16,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Text after a heading or code block in a nested list item is pulled into the outer item"
+  },
+  {
+    "id": "marked-ed54c541e",
+    "repo": "marked",
+    "url": "https://github.com/markedjs/marked",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "ba50aa95636ac8f97f46446bbfeb04592ed22216",
+    "fix": "ed54c541ef75740634a09233c685a5bba1e92944",
+    "test_files": [
+      "test/specs/new/image_alt_hard_break.html",
+      "test/specs/new/image_alt_hard_break.md"
+    ],
+    "src_files": [
+      "src/TextRenderer.ts"
+    ],
+    "src_lines": 2,
+    "setup": "npm ci --no-audit --no-fund",
+    "oracle": "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js",
+    "report": "Keep hard line breaks in image alt text"
+  }
+]
