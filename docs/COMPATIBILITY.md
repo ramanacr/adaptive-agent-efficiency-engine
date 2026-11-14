@@ -8,13 +8,13 @@ AAES depends on the Claude Code hook protocol: the `PostToolUse` input fields an
 
 | Check | What it proves | Where | Versions |
 |---|---|---|---|
-| Live contract test | Shaped text reaches the model, and facts survive (29 checks) | `scripts/contract-test.ps1`, run by hand | **2.1.233** on Windows 11, 2026-11-07: 29/29 pass |
+| Live contract test | Shaped text reaches the model, and facts survive (29 checks) | `scripts/contract-test.ps1`, run by hand | **2.1.321** on Windows 11, 2026-11-14: 28/29 pass, 1 soft warning; 2.1.233 on 2026-11-07: 29/29 pass |
 | Observed payload shapes | Every field that AAES reads is present | Tool results in local transcripts (same shape as the hook input) | **2.1.209 to 2.1.321**, 29 versions, Windows, July to November 2026 |
 | Offline payload contract | Each observed shape gets the right decision | `tests/contract/payloads.json` + `crates/aaes-runtime/tests/payload_contract.rs`, in CI | The shapes above |
 
 Supported range: **Claude Code 2.1.209 or later**. Older versions are not tested.
 
-The Claude desktop app has its own copy of Claude Code. Its version can be newer than the `claude` CLI on the same machine. For example, on 2026-11-10 the app ran 2.1.321 and the CLI ran 2.1.233. Hooks in desktop sessions run under the app's version. The live contract test checks only the CLI version. The payload shapes of the app's version are covered by the observed shapes and the offline contract.
+The Claude desktop app has its own copy of Claude Code. Its version can be newer than the `claude` CLI on the same machine. For example, on 2026-11-10 the app ran 2.1.321 and the CLI ran 2.1.233. Hooks in desktop sessions run under the app's version. `scripts/contract-test.ps1 -Claude <path>` runs the live test against any build, which is how 2.1.321 was tested on 2026-11-14 while the CLI was still 2.1.233.
 
 ### 1.1 Fields AAES reads
 
@@ -45,7 +45,7 @@ AAES fails open. If a required field is missing, it passes the output through un
 
 To add a new Claude Code version:
 
-1. Run the live contract test with the new CLI: `pwsh scripts/contract-test.ps1 -Aaes target/release/aaes -Auth subscription`.
+1. Run the live contract test with the new build: `pwsh scripts/contract-test.ps1 -Aaes target/release/aaes -Auth subscription` (add `-Claude <path>` for a build that is not on PATH, such as the desktop app's).
 2. If it passes, record the version with `-UpdatePin`.
 3. If the version has a new tool-result shape, add a case to `tests/contract/payloads.json` with its `observed` range, and run `cargo test -p aaes-runtime --test payload_contract`.
 4. Update the tables on this page.

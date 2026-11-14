@@ -49,6 +49,20 @@ pwsh scripts/contract-test.ps1 -Claude <path to another claude.exe>          # e
 
 First run: Claude Code 2.1.233, `haiku`, subscription auth: **29/29 checks pass, 0 warnings**, about USD 0.35 as reported by Claude Code. It is not in CI, because it needs a Claude Code login. Run it after each Claude Code update and before a release.
 
+### Runs
+
+| Date | Claude Code | aaes | Result | Cost (USD) | Hook p50 (C5) |
+|---|---|---|---|---|---|
+| 2026-11-07 | 2.1.233 | 0.1.0 | 29/29 pass, 0 warnings | 0.35 | - |
+| 2026-11-14 | 2.1.321 | 0.1.3 | 28/29 hard checks pass, 1 warning | 0.034 | 29.5 ms |
+
+The 2026-11-14 run moved the pin to 2.1.321. No payload shape changed between the two versions:
+every hard check passed, and there were no schema-drift warnings. The one warning is C4, where the
+sub-agent answered "Cannot confirm from the Read result" although the outline reached it (an 8.6 KB
+`hook_additional_context` in the sub-agent transcript, containing the line range it was asked for).
+That is the same Haiku instruction-following lapse as C1 in the first run, not a delivery failure.
+
+
 ## Follow-ups
 - ~~Automate this contract test as a scripted, version-pinned check (FUN-014).~~ Done 2026-11-07, see above.
 - ~~MET-016 Edit-failure instrumentation (`PostToolUseFailure` for Edit/MultiEdit).~~ Done from transcripts instead (2026-11-05): with Claude Code 2.1.233, a failed Edit (`String to replace not found`) fires no `PostToolUseFailure` hook. Bad `old_string` errors come from input validation, before the tool runs. A successful Edit does fire `PostToolUse`. `aaes report` reads the session transcripts.
