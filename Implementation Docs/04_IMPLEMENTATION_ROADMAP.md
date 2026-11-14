@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v0.7
+# Implementation Roadmap — AAES v0.8
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -12,6 +12,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 0.5 | 2026-11-04 | M1 spike done (`docs/spikes/M1-hook-spike.md`): all four assumptions confirmed; ADR-021 accepted, so `aaes serve` (HTTP hooks) is part of M1 on Windows. |
 | 0.6 | 2026-11-04 | **M1 increment 1 delivered** and contract-tested with Claude Code (`docs/spikes/M1-contract-test.md`). Status markers added to M1; repository layout updated to the real crates. |
 | 0.7 | 2026-11-05 | Added **M2b, web-search admission control** (ADR-024, FUN-027), gated on a new M-1 measurement (MET-017 baseline). |
+| 0.8 | 2026-11-14 | M2 pilot ran (240 runs). Reliability and latency results are clean; the efficiency result is **inconclusive** because the fix-commit-replay corpus almost never produces a shapeable tool result (3 shaped results in 60 arm-C runs). The powered study needs a corpus of large-output tasks and a shaping-coverage pre-check. Details in `03_BENCHMARK_PLAN.md`. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
@@ -95,6 +96,9 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
   - ✅ Per-repo overrides (2026-11-10): `repos` in `config.json` sets `read_shaping`, `shadow` and the shaping thresholds per repo root (closest root wins, unset keys inherit). Events carry the override name; `aaes report` shows a per-repo table with advice (keep / turn off or raise the threshold / try it on) from the cost-weighted net saving, and `aaes replay` applies the same overrides. Settings change only by the user; automatic adjustment is not planned until the advice is validated.
 - ✅ Version support matrix (2026-11-11): `docs/COMPATIBILITY.md` (Claude Code 2.1.209–2.1.321 by observed payload shapes, 2.1.233 by the live contract test; platforms; MSRV 1.85 now checked in CI). Offline payload contract in CI (`tests/contract/payloads.json`). Found and fixed: Read results that Claude Code cut at its token cap (`truncatedByTokenCap`) now pass through.
 - ✅ Tool-definition overhead (2026-11-11): ADR-025 accepted after its spike. `aaes mine --tools` measures the fixed request prefix from the exact `system`/`tools` arrays that Claude Code 2.1.304+ records (`api-request-shape`), plus the deferred-tool, MCP-instruction, skill and agent listings; splits its cache-aware cost by built-in tools, MCP server, plugin and listing; lists servers with no calls. Read-only advice; no request rewriting.
+
+- ✅ M2 pilot (2026-11-14): 20 tasks x 4 arms (A, A', C, C-shadow) x 3 replications = 240 runs on pinned OSS snapshots, headless, fresh `CLAUDE_CONFIG_DIR` and `AAES_HOME` per run, randomized arm order. Runner and analyzer in `bench/pilot/`. Result: 100% success in every arm (psi = 0), **0 hook errors**, no stop-rule task, no compaction, C-shadow wall-clock -4 s against A. All efficiency intervals contain zero, and the session events show why: AAES shaped 3 of 103 shapeable tool results, because the agent reads narrow ranges and its greps return under the cap. **The pilot does not support an efficiency claim in either direction on this corpus.**
+- ⏳ Before the powered study: build a corpus of large-output tasks (strata 2, 6 and 13) and gate it on a shaping-coverage pre-check of at least 30% of shapeable results in arm C.
 
 **Exit**: net-positive on the representative workload *and* a material gain over A′, or a documented re-scope.
 

@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v0.6
+# Benchmark and Evaluation Protocol — AAES v0.7
 
 ## 0. Change log
 | Version | Date | Change |
@@ -9,6 +9,7 @@
 | 0.4 | 2026-11-03 | M1 evaluation focuses on read and search shaping: new stratum 13 (read-then-edit on large files), rebound and Edit-failure metrics and gates. Phase 0 result: GO (calibrated); calibration validated against `count_tokens` (`tools/calibration-check`): within ~5%. |
 | 0.5 | 2026-11-04 | Read-rebound gate adds ≤ 1 follow-up call per shaped result (MET-015). Early local dogfooding suggests agents fetch most of smaller shaped files anyway, so the read threshold is being evaluated at a higher value (details in the private findings). |
 | 0.6 | 2026-11-10 | Added the **M2 pilot protocol**: a small, runnable first study (headless runs, arms A / A′ / C / C-shadow, public corpus, pre-registered metrics, pilot to estimate ψ before the powered study). Cache-aware result cost now uses the same formula as `aaes report` and `aaes mine` (`k` later requests until compaction). Shadow mode added as a control arm. |
+| 0.7 | 2026-11-14 | Ran the M2 pilot (240 runs, 20 tasks, 4 arms, 3 replications) and recorded the result below. The pilot is **inconclusive on efficiency** because the corpus almost never produces a shapeable tool result. Added the corpus requirement that a task must generate large tool output, and a pre-run coverage check. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -154,6 +155,44 @@ C-shadow gives the agent the same tool output as A. A difference in task success
 ### Stop rules
 - Stop and fix before the powered study if: any fidelity failure in the golden suite; a hook error in any C run (`aaes logs --errors`); a task where C fails and both A and C-shadow pass in every replication (inspect the transcript first).
 - Publish the pilot result, positive or negative, with the full arm configuration.
+
+### M2 pilot result (2026-11-14)
+
+Run on 2026-11-14 with Claude Code 2.1.321 and model `sonnet`. 20 tasks (commander.js 8, marked 8, CsvHelper 4), 4 arms, 3 replications: **240 runs**, all completed. Reported agent cost for the whole pilot: $24.19.
+
+| Arm | Runs | Success | Cost-weighted input / run | Cost / run (USD) | Tool calls | Compactions | Wall (s) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A | 60 | 100% | 55,234 | 0.100 | 7.0 | 0 | 205 |
+| A' | 60 | 100% | 55,081 | 0.099 | 8.1 | 0 | 236 |
+| C | 60 | 100% | 57,780 | 0.104 | 7.3 | 0 | 217 |
+| C-shadow | 60 | 100% | 55,703 | 0.101 | 7.1 | 0 | 201 |
+
+Paired differences against A (per task, replications averaged, 95% bootstrap interval over the 20 tasks):
+
+| Arm | Success (pp) | Cost-weighted input | Cost (USD) | Wall (s) |
+|---|---|---|---|---|
+| A' | +0.0 [+0.0, +0.0] | -153 (-0.3%) [-5,104, +4,198] | -0.001 [-0.010, +0.007] | +31 [-5, +73] |
+| C | +0.0 [+0.0, +0.0] | +2,546 (+4.6%) [-2,494, +7,802] | +0.004 [-0.004, +0.012] | +12 [-26, +53] |
+| C-shadow | +0.0 [+0.0, +0.0] | +469 (+0.8%) [-2,725, +3,575] | +0.001 [-0.004, +0.005] | -4 [-39, +29] |
+
+**psi = 0/60.** Every arm passed every task in every replication, so the corpus cannot separate arms on success and the sample-size formula returns 0. Every efficiency interval contains zero.
+
+**Why the efficiency result is inconclusive.** The AAES session events explain it. Across the 60 C runs the sidecar saw 103 tool results it could act on and shaped **3**:
+
+| Arm | Pass | Shaped / shadow | Raw bytes | Delivered bytes | Saved |
+|---|---:|---:|---:|---:|---:|
+| C | 100 | 3 shaped | 157,406 | 149,026 | 8,380 |
+| C-shadow | 96 | 6 shadow | 142,790 | 142,790 | 0 |
+
+Pass reasons in C: `small` 71, `ranged` 16, `read_shaping_off` 8, `unparsed` 2, `not_content_mode` 2. The agent reads narrow line ranges and runs greps that return less than the cap, so the shaper almost never fires. The 8,380 bytes saved over 60 runs are about three orders of magnitude smaller than the per-run noise in the table above, so the +4.6% on C is noise, not an effect of shaping.
+
+**What the pilot does establish.**
+- The harness works end to end: 240 paired runs, fresh config and `AAES_HOME` per run, randomized arm order.
+- AAES costs nothing in reliability on this corpus: 100% success, **0 hook errors** in 120 C and C-shadow runs, and no stop-rule task.
+- AAES costs nothing in latency: C-shadow wall-clock is -4 s against A, interval [-39, +29].
+- No fidelity failure and no compaction in any run.
+
+**Corpus requirement added for the powered study.** Fix-commit replay with the failing test named in the issue text is the wrong workload to measure shaping: the agent already knows where to look, so its tool output stays small. The powered study needs tasks whose tool output is large by construction - whole-file reads of large files, repo-wide searches, and open-ended exploration (strata 2, 6 and 13). Before the powered study runs, a **coverage pre-check** must show that at least 30% of shapeable tool results in the C arm are actually shaped; a corpus below that threshold cannot measure the treatment and must be replaced.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
