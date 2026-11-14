@@ -78,12 +78,37 @@ def api_key() -> str:
     return k
 
 
+def drop_links(root: Path) -> None:
+    """Remove junctions and directory symlinks under `root`, link only.
+
+    Python 3.11's shutil.rmtree walks into a Windows junction, which would delete the shared
+    `node_modules` it points at. Removing the links first makes the delete safe.
+    """
+    for dirpath, dirnames, _ in os.walk(root, topdown=True):
+        for name in list(dirnames):
+            p = Path(dirpath) / name
+            try:
+                attrs = os.lstat(p).st_file_attributes  # Windows only
+                link = bool(attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+            except AttributeError:
+                link = p.is_symlink()
+            except OSError:
+                continue
+            if link:
+                dirnames.remove(name)
+                try:
+                    os.rmdir(p) if not p.is_symlink() else p.unlink()
+                except OSError:
+                    pass
+
+
 def rmtree(p: Path) -> None:
     """Remove a folder, including read-only files (git objects on Windows)."""
     def onerror(func, path, _exc):
         os.chmod(path, stat.S_IWRITE)
         func(path)
     if p.exists():
+        drop_links(p)
         shutil.rmtree(p, onerror=onerror)
 
 
@@ -97,8 +122,15 @@ def sh(cmd: str, cwd: Path, env: dict | None = None, timeout: int = 900) -> tupl
 
 
 def git(args: str, cwd: Path) -> str:
-    p = subprocess.run(["git", *shlex.split(args)], cwd=cwd, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+    # --no-ext-diff: the user's global diff tool must not run here. An empty GIT_EXTERNAL_DIFF
+    # would make git spawn "", so the variable is removed instead of being set empty.
+    env = {k: v for k, v in os.environ.items() if k != "GIT_EXTERNAL_DIFF"}
+    parts = shlex.split(args)
+    if "diff" in parts:  # it is a subcommand option, not a top-level one
+        parts.insert(parts.index("diff") + 1, "--no-ext-diff")
+    p = subprocess.run(["git", "-c", "core.pager=cat", *parts],
+                       cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=dict(env, GIT_PAGER="cat"))
     if p.returncode:
         raise RuntimeError(f"git {args}: {(p.stdout + p.stderr)[-800:]}")
     return p.stdout
@@ -144,8 +176,8 @@ def snapshot(work: Path, t: dict) -> Path:
         if code:
             raise RuntimeError(f"setup failed for {t['id']}: {out[-500:]}")
     # Dependencies and build output stay out of `git diff`.
-    (tree / ".git" / "info" / "exclude").write_text("node_modules/\nbin/\nobj/\nlib/*.js.map\nCLAUDE.md\n")
-    (snap / "ready").write_text("ok")
+    (tree / ".git" / "info" / "exclude").write_text("node_modules/\nbin/\nobj/\nlib/*.js.map\nCLAUDE.md\n", encoding="utf-8", errors="replace")
+    (snap / "ready").write_text("ok", encoding="utf-8", errors="replace")
     return tree
 
 
@@ -155,15 +187,36 @@ def setup_arm(arm: str, run: Path, repo: Path, aaes: str, env: dict) -> None:
     cfg.mkdir(parents=True)
     home.mkdir(parents=True)
     settings = cfg / "settings.json"
-    settings.write_text("{}\n")
+    settings.write_text("{}\n", encoding="utf-8", errors="replace")
     if arm == "Aprime":
-        (repo / "CLAUDE.md").write_text(APRIME_MD)
+        (repo / "CLAUDE.md").write_text(APRIME_MD, encoding="utf-8", errors="replace")
     if arm in ("C", "Cshadow"):
         if arm == "Cshadow":
-            (home / "config.json").write_text('{"shadow": ["read", "search"]}\n')
+            (home / "config.json").write_text('{"shadow": ["read", "search"]}\n', encoding="utf-8", errors="replace")
         code, out = sh(f'"{aaes}" init --mode command --settings "{settings}"', run, env)
         if code:
             raise RuntimeError(f"aaes init failed: {out}")
+
+
+def copy_snapshot(src: Path, dst: Path) -> None:
+    """Copy a snapshot without `node_modules`, which is linked instead.
+
+    Copying it would be most of the work (marked: 235 MB in 16.5k files per run, against about
+    5 MB of sources). Runs only read it; they install nothing.
+    """
+    shutil.copytree(src, dst, symlinks=True, ignore=shutil.ignore_patterns("node_modules"))
+    shared = src / "node_modules"
+    if not shared.is_dir():
+        return
+    link = dst / "node_modules"
+    if sys.platform == "win32":
+        # A directory junction needs no privileges, and tools follow it like a real folder.
+        p = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(shared)],
+                           capture_output=True, text=True)
+        if p.returncode:
+            raise RuntimeError(f"mklink failed: {p.stdout} {p.stderr}")
+    else:
+        link.symlink_to(shared, target_is_directory=True)
 
 
 def transcripts(projects: Path, session_id: str | None) -> list[tuple[Path, Path]]:
@@ -184,7 +237,7 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
     rmtree(run)
     run.mkdir(parents=True)
     repo = run / "repo"
-    shutil.copytree(snapshot(work, t), repo, symlinks=True)
+    copy_snapshot(snapshot(work, t), repo)
     env = dict(os.environ)
     for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "AAES_HOOK_TOKEN", "AAES_RAW"):
         env.pop(k, None)
@@ -217,8 +270,8 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         out, err, code = (e.stdout or ""), "timeout", 124
         out = out.decode("utf-8", "replace") if isinstance(out, bytes) else out
     wall = time.time() - t0
-    (run / "claude.json").write_text(out)
-    (run / "claude.err").write_text(err[-20000:] if isinstance(err, str) else "")
+    (run / "claude.json").write_text(out, encoding="utf-8", errors="replace")
+    (run / "claude.err").write_text(err[-20000:] if isinstance(err, str) else "", encoding="utf-8", errors="replace")
     try:
         res = json.loads(out)
     except json.JSONDecodeError:
@@ -232,7 +285,7 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         elif (repo / path).exists():
             (repo / path).unlink()
     ocode, oout = sh(t["oracle"], repo, env=env, timeout=1200)
-    (run / "oracle.txt").write_text(oout)
+    (run / "oracle.txt").write_text(oout, encoding="utf-8", errors="replace")
     diff = git("--no-pager diff --numstat HEAD", repo)
     changed = [l.split("\t") for l in diff.splitlines() if l.count("\t") == 2]
     diff_lines = sum(int(x[0]) + int(x[1]) for x in changed if x[0].isdigit() and x[1].isdigit())
@@ -250,7 +303,7 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
     report, hook_errors = None, None
     if arm in ("C", "Cshadow"):
         c, o = sh(f'"{a.aaes}" report --json', run, env)
-        (run / "aaes-report.json").write_text(o)
+        (run / "aaes-report.json").write_text(o, encoding="utf-8", errors="replace")
         try:
             report = json.loads(o)
         except json.JSONDecodeError:
@@ -258,9 +311,9 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         c, o = sh(f'"{a.aaes}" logs --errors --all', run, env)
         lines = [l for l in o.splitlines() if l.strip() and "client closed early" not in l]
         hook_errors = len(lines)
-        (run / "aaes-errors.txt").write_text(o)
+        (run / "aaes-errors.txt").write_text(o, encoding="utf-8", errors="replace")
     # The copied repo (with node_modules) is large; keep only the diff.
-    (run / "diff.patch").write_text(git("--no-pager diff HEAD", repo))
+    (run / "diff.patch").write_text(git("--no-pager diff HEAD", repo), encoding="utf-8", errors="replace")
     if not a.keep_repo:
         rmtree(repo)
     return {
