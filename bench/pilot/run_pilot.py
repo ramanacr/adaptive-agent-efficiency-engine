@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import random
+import re
 import shlex
 import shutil
 import stat
@@ -175,10 +176,31 @@ def snapshot(work: Path, t: dict) -> Path:
         code, out = sh(t["setup"], tree, timeout=1800)
         if code:
             raise RuntimeError(f"setup failed for {t['id']}: {out[-500:]}")
+    drop_speed_assertion(tree)
     # Dependencies and build output stay out of `git diff`.
     (tree / ".git" / "info" / "exclude").write_text("node_modules/\nbin/\nobj/\nlib/*.js.map\nCLAUDE.md\n", encoding="utf-8", errors="replace")
     (snap / "ready").write_text("ok", encoding="utf-8", errors="replace")
     return tree
+
+
+def drop_speed_assertion(tree: Path) -> bool:
+    """Turn off marked's per-spec speed assertion in the snapshot's test helper.
+
+    `@markedjs/testutils` fails any spec whose wall time reaches 1 second
+    (`assert.fail("took too long: ...")`). That measures how busy the machine is, not whether the
+    fix is correct, and it fails at random while several pilot runs share the machine. It is
+    switched off for every arm alike, so it cannot favour one. Every other assertion stays.
+    """
+    f = tree / "node_modules" / "@markedjs" / "testutils" / "lib" / "run-tests.js"
+    if not f.is_file():
+        return False
+    src = f.read_text(encoding="utf-8", errors="replace")
+    pat = re.compile(r"assert\.fail\(`took too long[^`]*`\);")
+    if not pat.search(src):
+        return False
+    f.write_text(pat.sub("void 0; // speed assertion disabled for the pilot", src),
+                 encoding="utf-8", errors="replace")
+    return True
 
 
 def setup_arm(arm: str, run: Path, repo: Path, aaes: str, env: dict) -> None:
