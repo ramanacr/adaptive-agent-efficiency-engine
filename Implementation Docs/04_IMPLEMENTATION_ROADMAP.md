@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v0.8
+# Implementation Roadmap — AAES v0.9
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -13,6 +13,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 0.6 | 2026-11-04 | **M1 increment 1 delivered** and contract-tested with Claude Code (`docs/spikes/M1-contract-test.md`). Status markers added to M1; repository layout updated to the real crates. |
 | 0.7 | 2026-11-05 | Added **M2b, web-search admission control** (ADR-024, FUN-027), gated on a new M-1 measurement (MET-017 baseline). |
 | 0.8 | 2026-11-14 | M2 pilot ran (240 runs). Reliability and latency results are clean; the efficiency result is **inconclusive** because the fix-commit-replay corpus almost never produces a shapeable tool result (3 shaped results in 60 arm-C runs). The powered study needs a corpus of large-output tasks and a shaping-coverage pre-check. Details in `03_BENCHMARK_PLAN.md`. |
+| 0.9 | 2026-11-15 | Large-output corpus built (ESLint, 10 verified tasks) and probed. Coverage rose from 2.9% to 16.7%, still under the 30% gate. The probe found that **72.5% of tool-result bytes come from `Bash`**, outside the M1 shapers, which raises the priority of the M3 shell and test-output parsers. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
@@ -99,6 +100,8 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 
 - ✅ M2 pilot (2026-11-14): 20 tasks x 4 arms (A, A', C, C-shadow) x 3 replications = 240 runs on pinned OSS snapshots, headless, fresh `CLAUDE_CONFIG_DIR` and `AAES_HOME` per run, randomized arm order. Runner and analyzer in `bench/pilot/`. Result: 100% success in every arm (psi = 0), **0 hook errors**, no stop-rule task, no compaction, C-shadow wall-clock -4 s against A. All efficiency intervals contain zero, and the session events show why: AAES shaped 3 of 103 shapeable tool results, because the agent reads narrow ranges and its greps return under the cap. **The pilot does not support an efficiency claim in either direction on this corpus.**
 - ⏳ Before the powered study: build a corpus of large-output tasks (strata 2, 6 and 13) and gate it on a shaping-coverage pre-check of at least 30% of shapeable results in arm C.
+- ✅ Large-output corpus and coverage gate (2026-11-15): ESLint added to the public corpus (2,363 files, 676k lines, 302 rule test files, oracle about 9 s), `run_pilot.py --prompt-style discover --read-shaping`, and `bench/pilot/coverage_check.py` as the pre-check. Probe on 3 tasks: coverage 2.9% -> 16.7%, one shaped read 6,204 -> 1,511 bytes. Gate not met, and the reason is the tool mix, not the corpus: `Bash` carries 72.5% of tool-result bytes, search 17.4%, read 9.6%. The M1 shapers can reach at most about 27% of bytes on this workload.
+- ⏳ Scope decision before any powered study: either land the M3 shell and test-output parsers first and then measure, or measure the M1 scope on a deliberately read-and-search-heavy corpus and state that it is not representative.
 
 **Exit**: net-positive on the representative workload *and* a material gain over A′, or a documented re-scope.
 

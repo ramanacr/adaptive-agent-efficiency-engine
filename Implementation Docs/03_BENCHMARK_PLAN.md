@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v0.7
+# Benchmark and Evaluation Protocol — AAES v0.8
 
 ## 0. Change log
 | Version | Date | Change |
@@ -10,6 +10,7 @@
 | 0.5 | 2026-11-04 | Read-rebound gate adds ≤ 1 follow-up call per shaped result (MET-015). Early local dogfooding suggests agents fetch most of smaller shaped files anyway, so the read threshold is being evaluated at a higher value (details in the private findings). |
 | 0.6 | 2026-11-10 | Added the **M2 pilot protocol**: a small, runnable first study (headless runs, arms A / A′ / C / C-shadow, public corpus, pre-registered metrics, pilot to estimate ψ before the powered study). Cache-aware result cost now uses the same formula as `aaes report` and `aaes mine` (`k` later requests until compaction). Shadow mode added as a control arm. |
 | 0.7 | 2026-11-14 | Ran the M2 pilot (240 runs, 20 tasks, 4 arms, 3 replications) and recorded the result below. The pilot is **inconclusive on efficiency** because the corpus almost never produces a shapeable tool result. Added the corpus requirement that a task must generate large tool output, and a pre-run coverage check. |
+| 0.8 | 2026-11-15 | Built the large-output corpus (ESLint, 10 verified tasks) and the shaping-coverage pre-check (`bench/pilot/coverage_check.py`). The probe lifted coverage from 2.9% to 16.7%, still under the gate, and showed why: **72.5% of tool-result bytes come from `Bash`**, which the M1 shapers do not handle. Corpus size is not the binding constraint; the tool mix is. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -193,6 +194,64 @@ Pass reasons in C: `small` 71, `ranged` 16, `read_shaping_off` 8, `unparsed` 2, 
 - No fidelity failure and no compaction in any run.
 
 **Corpus requirement added for the powered study.** Fix-commit replay with the failing test named in the issue text is the wrong workload to measure shaping: the agent already knows where to look, so its tool output stays small. The powered study needs tasks whose tool output is large by construction - whole-file reads of large files, repo-wide searches, and open-ended exploration (strata 2, 6 and 13). Before the powered study runs, a **coverage pre-check** must show that at least 30% of shapeable tool results in the C arm are actually shaped; a corpus below that threshold cannot measure the treatment and must be replaced.
+
+### Large-output corpus probe (2026-11-15)
+
+The pilot result above said the corpus could not exercise the shaper, so the next step was a
+corpus whose tool output is large by construction. Three changes were made and then probed
+cheaply, before any powered run.
+
+1. **A larger repository.** ESLint joins the public corpus: 2,363 tracked files and 676,162
+   lines against 220 files and 29,003 lines for commander.js, with 306 rules, 302 rule test
+   files and single test files up to 14,411 lines. Ten tasks were mined and verified
+   (`bench/pilot/tasks/eslint.json`); the oracle is one `mocha` file and takes about 9 seconds.
+   ESLint commits no lockfile, so its dependency set is keyed on `package.json` instead.
+2. **A prompt that hides the answer.** `run_pilot.py --prompt-style discover` gives the bug
+   report and a command template, not the failing test path. The located prompt handed the agent
+   the file and the exact command, which is why its searches returned `small`.
+3. **Read shaping on.** `--read-shaping` turns it on in the C arms; the pilot ran with the
+   shipped default (off), so every large read passed with `read_shaping_off`.
+
+**Probe:** 3 ESLint tasks, arm C only, one replication, $0.60.
+
+| Corpus and configuration | Shapeable results | Covered | Coverage |
+|---|---:|---:|---:|
+| Pilot corpus, located prompt, read shaping off | 103 | 3 | 2.9% |
+| ESLint, discover prompt, read shaping on | 6 | 1 | 16.7% |
+
+Coverage improved by about six times and the one shaped read cut 6,204 bytes to 1,511 (76%),
+so the shaper works when it fires. It is still below the 30% gate, and the event log shows that
+more tasks would not fix it. **The agent does most of its file reading through `Bash`.**
+
+| Tool family | Events | Raw bytes | Share |
+|---|---:|---:|---:|
+| `Bash` (`other`, not handled) | 304 | 448,860 | **72.5%** |
+| Search (`Grep`) | 80 | 107,854 | 17.4% |
+| Read | 28 | 59,674 | 9.6% |
+| Shell read | 1 | 2,773 | 0.4% |
+
+Measured over every arm-C run to date. One probe run used `Bash` exclusively and no `Read` or
+`Grep` at all; its transcript shows `cat ... | sed -n`, `sed -n 485,640p`,
+`npx mocha ... | grep -A40 failing | head -6`, and a heredoc script to edit the file. The agent
+pipes and truncates its own output by default, and it reaches for the shell rather than the
+shaped tools.
+
+**Consequences for the study.**
+- The M1 shapers (`Read`, `Grep`) address at most about 27% of tool-result bytes on this
+  workload, and the realised share is far smaller. A powered study of the M1 scope can only
+  measure that minority, however large the corpus is.
+- Shell output is mostly test-runner output, which `03_BENCHMARK_PLAN.md` and the roadmap
+  already assign to the M3 parsers. The pilot evidence raises its priority: it is where the
+  bytes are.
+- The 30% coverage gate stays. It is doing its job - it stopped a second inconclusive study for
+  about a dollar.
+- Two ways forward, and the choice is a scope decision, not a benchmarking one: land the M3
+  shell and test-output parsers and then measure, or run a powered study of the M1 scope on a
+  deliberately read-and-search-heavy corpus while stating plainly that it does not represent
+  ordinary agent work.
+
+The probe is small (3 tasks, one replication) and the byte shares come from four repositories on
+one model, so they size the problem rather than settle it.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).

@@ -53,6 +53,11 @@ def marked_oracle(tests: list[str], root: Path) -> str:
     return "npm run build && node --test test/run-spec-tests.js && node --test test/unit/*.test.js"
 
 
+def eslint_oracle(tests: list[str], root: Path) -> str:
+    # ESLint runs its unit tests with mocha; a rule test file is self-contained.
+    return "npx mocha --timeout 20000 " + " ".join(tests)
+
+
 def csv_oracle(tests: list[str], root: Path) -> str:
     """Newest .NET 8+ target of the test project, run on the installed runtime (roll forward)."""
     proj = root / "tests" / "CsvHelper.Tests" / "CsvHelper.Tests.csproj"
@@ -87,6 +92,22 @@ REPOS: dict[str, dict] = {
         "lock": "package-lock.json",
         "setup": "npm ci --no-audit --no-fund",
         "oracle": commander_oracle,
+    },
+    # Large-output repository (ADR/benchmark note): ESLint has about 300 rules, each with a
+    # test file of thousands of lines, so a repo-wide search or a whole-file read is big enough
+    # for the shaper to act on. The pilot corpus was too small to exercise it at all.
+    "eslint": {
+        "url": "https://github.com/eslint/eslint",
+        "strata": [2, 6, 13],
+        "src": r"^lib/.+\.js$",
+        "test": r"^tests/lib/.+\.js$",
+        # ESLint commits no lockfile, so `npm ci` cannot run and the dependency set is keyed on
+        # `package.json` instead: the install is reused until that file changes. An install takes
+        # about 7 minutes here, so reinstalling per candidate would make mining impossible.
+        "lock": "package.json",
+        "setup": "npm install --no-audit --no-fund --no-package-lock",
+        "oracle": eslint_oracle,
+        "discover_cmd": "npx mocha --timeout 20000 <path to the test file>",
     },
     "CsvHelper": {
         "url": "https://github.com/JoshClose/CsvHelper",
@@ -152,7 +173,8 @@ def candidates(repo: Path, cfg: dict, limit: int):
 
 
 def report_text(subject: str) -> str:
-    s = re.sub(r"^(fix|bugfix|bug)(\([^)]*\))?!?:\s*", "", subject, flags=re.I)
+    s = re.sub(r"^(fix|bugfix|bug|feat|feature|perf|refactor)(\([^)]*\))?!?:\s*", "",
+               subject, flags=re.I)
     s = re.sub(r"\s*\(#\d+\)\s*$", "", s)
     return s[:1].upper() + s[1:]
 
@@ -228,8 +250,12 @@ def mine(work: Path, name: str, want: int, scan: int) -> list[dict]:
             ok, why = False, str(e)[:300]
         print(f"    -> {'TASK' if ok else 'skip'}: {why}", flush=True)
         if not ok:
-            rejected[sha] = why
-            rejected_path.write_text(json.dumps(rejected, indent=1))
+            # A setup failure says nothing about the commit: it is a broken toolchain, a wrong
+            # install command or a network problem. Caching it would hide the commit from every
+            # later run, so only a real verification failure is remembered.
+            if not why.startswith("setup failed"):
+                rejected[sha] = why
+                rejected_path.write_text(json.dumps(rejected, indent=1))
             continue
         tasks.append({
             "id": f"{name}-{sha[:9]}",
@@ -243,6 +269,10 @@ def mine(work: Path, name: str, want: int, scan: int) -> list[dict]:
             "src_lines": lines,
             "setup": cfg["setup"],
             "oracle": state["oracle"],
+            # How the agent is told to run a test it has found, when the runner hides the test
+            # path (`--prompt-style discover`). Without it the prompt falls back to the oracle,
+            # which names the file and so defeats the point.
+            "discover_cmd": cfg.get("discover_cmd"),
             "report": report_text(subject),
         })
         out_path.parent.mkdir(parents=True, exist_ok=True)

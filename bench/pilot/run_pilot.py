@@ -62,6 +62,18 @@ Run them with:
 Fix the library source code so that these tests pass. Do not change the tests.
 When you are done, reply with one line: DONE."""
 
+DISCOVER_PROMPT = """You are working in a checkout of {repo} ({url}).
+
+Bug report: {report}
+
+A test that reproduces the bug is already in the working tree, but you are not told which one.
+Find it, then fix the library source code so that it passes. Do not change any test.
+
+Run one test file with:
+    {suite}
+
+When you are done, reply with one line: DONE."""
+
 TOOLS = "Read,Edit,Write,Glob,Grep,Bash,Task"
 
 
@@ -203,7 +215,8 @@ def drop_speed_assertion(tree: Path) -> bool:
     return True
 
 
-def setup_arm(arm: str, run: Path, repo: Path, aaes: str, env: dict) -> None:
+def setup_arm(arm: str, run: Path, repo: Path, aaes: str, env: dict,
+              read_shaping: bool = False) -> None:
     cfg = run / "cfg"
     home = run / "aaes-home"
     cfg.mkdir(parents=True)
@@ -213,8 +226,14 @@ def setup_arm(arm: str, run: Path, repo: Path, aaes: str, env: dict) -> None:
     if arm == "Aprime":
         (repo / "CLAUDE.md").write_text(APRIME_MD, encoding="utf-8", errors="replace")
     if arm in ("C", "Cshadow"):
+        cfg_json: dict = {}
         if arm == "Cshadow":
-            (home / "config.json").write_text('{"shadow": ["read", "search"]}\n', encoding="utf-8", errors="replace")
+            cfg_json["shadow"] = ["read", "search"]
+        if read_shaping:
+            cfg_json["read_shaping"] = True
+        if cfg_json:
+            (home / "config.json").write_text(json.dumps(cfg_json) + "\n",
+                                              encoding="utf-8", errors="replace")
         code, out = sh(f'"{aaes}" init --mode command --settings "{settings}"', run, env)
         if code:
             raise RuntimeError(f"aaes init failed: {out}")
@@ -274,9 +293,13 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         "DISABLE_AUTOUPDATER": "1",
         "DISABLE_TELEMETRY": "1",
     })
-    setup_arm(arm, run, repo, a.aaes, env)
-    prompt = PROMPT.format(repo=t["repo"], url=t["url"], report=t["report"],
-                           tests=", ".join(t["test_files"]), oracle=t["oracle"])
+    setup_arm(arm, run, repo, a.aaes, env, a.read_shaping)
+    if a.prompt_style == "discover":
+        prompt = DISCOVER_PROMPT.format(repo=t["repo"], url=t["url"], report=t["report"],
+                                        suite=t.get("discover_cmd") or t["oracle"])
+    else:
+        prompt = PROMPT.format(repo=t["repo"], url=t["url"], report=t["report"],
+                               tests=", ".join(t["test_files"]), oracle=t["oracle"])
     cmd = [a.claude, "-p", prompt, "--model", a.model, "--output-format", "json",
            "--max-turns", str(a.max_turns), "--allowedTools", TOOLS,
            "--settings", str(run / "cfg" / "settings.json"), "--strict-mcp-config"]
@@ -347,6 +370,7 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         "duration_api_ms": res.get("duration_api_ms"), "diff_lines": diff_lines,
         "files_changed": len(changed), "hook_errors": hook_errors,
         "aaes_report": bool(report), "model": a.model, "claude": a.claude_version,
+        "prompt_style": a.prompt_style, "read_shaping": a.read_shaping,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
@@ -363,6 +387,10 @@ def main() -> int:
     ap.add_argument("--arms", default=",".join(ARMS))
     ap.add_argument("--tasks", help="comma-separated task ids (default: all)")
     ap.add_argument("--max-turns", type=int, default=60)
+    ap.add_argument("--prompt-style", choices=["located", "discover"], default="located",
+                    help="located: name the failing test; discover: make the agent find it")
+    ap.add_argument("--read-shaping", action="store_true",
+                    help="turn read shaping on in the C arms (off by default, as AAES ships)")
     ap.add_argument("--timeout", type=int, default=1200, help="seconds per agent run")
     ap.add_argument("--seed", type=int, default=20261113)
     ap.add_argument("--jobs", type=int, default=3, help="runs at the same time")
