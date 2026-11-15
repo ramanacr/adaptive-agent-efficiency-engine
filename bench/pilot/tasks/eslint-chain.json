@@ -1,0 +1,141 @@
+[
+ {
+  "id": "eslint-chain-10",
+  "repo": "eslint",
+  "url": "https://github.com/eslint/eslint",
+  "strata": [
+   2,
+   6,
+   13
+  ],
+  "base": "6194939873960e605b9df3892aa1f5acd648df34",
+  "setup": "npm install --no-audit --no-fund --no-package-lock",
+  "discover_cmd": "npx mocha --timeout 20000 <path to the test file>",
+  "chain": [
+   {
+    "id": "eslint-161558ae1",
+    "fix": "161558ae1391a8649a8d69a8b2c2e555b40121b9",
+    "report": "Handle LS, PS and empty hashbang comments",
+    "test_files": [
+     "tests/lib/languages/js/source-code/source-code.js",
+     "tests/lib/rules/capitalized-comments.js",
+     "tests/lib/rules/no-inline-comments.js",
+     "tests/lib/rules/no-warning-comments.js",
+     "tests/lib/shared/ast-utils.js"
+    ],
+    "src_files": [
+     "lib/shared/ast-utils.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/languages/js/source-code/source-code.js tests/lib/rules/capitalized-comments.js tests/lib/rules/no-inline-comments.js tests/lib/rules/no-warning-comments.js tests/lib/shared/ast-utils.js"
+   },
+   {
+    "id": "eslint-827a8f3cc",
+    "fix": "827a8f3cca710d3efd76c1d7088d894deff08434",
+    "report": "`no-restricted-globals` crash on global objects as property values",
+    "test_files": [
+     "tests/lib/rules/no-restricted-globals.js"
+    ],
+    "src_files": [
+     "lib/rules/no-restricted-globals.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/no-restricted-globals.js"
+   },
+   {
+    "id": "eslint-17f17cd7a",
+    "fix": "17f17cd7a248c532cfce61b7f915760608ca7121",
+    "report": "Update error location to head for `default-case`",
+    "test_files": [
+     "tests/lib/rules/default-case.js"
+    ],
+    "src_files": [
+     "lib/rules/default-case.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/default-case.js"
+   },
+   {
+    "id": "eslint-b11bcb367",
+    "fix": "b11bcb3675871ebffbac2088f85650718f4cf481",
+    "report": "Preserve necessary parens in `no-unneeded-ternary` autofix",
+    "test_files": [
+     "tests/lib/rules/no-unneeded-ternary.js"
+    ],
+    "src_files": [
+     "lib/rules/no-unneeded-ternary.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/no-unneeded-ternary.js"
+   },
+   {
+    "id": "eslint-af4c3a9cc",
+    "fix": "af4c3a9cc7c770419532b191ac465d4a1566eb0c",
+    "report": "Preserve TypeScript type parameters in `prefer-arrow-callback`",
+    "test_files": [
+     "tests/lib/rules/prefer-arrow-callback.js"
+    ],
+    "src_files": [
+     "lib/rules/prefer-arrow-callback.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/prefer-arrow-callback.js"
+   },
+   {
+    "id": "eslint-4941015b2",
+    "fix": "4941015b27f984599df30fbffde0559348cc0482",
+    "report": "Check individual specifier importKind in `no-shadow`",
+    "test_files": [
+     "tests/lib/rules/no-shadow.js"
+    ],
+    "src_files": [
+     "lib/rules/no-shadow.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/no-shadow.js"
+   },
+   {
+    "id": "eslint-34a8b1b97",
+    "fix": "34a8b1b978f0e06d595822173a3c782c5ac661ba",
+    "report": "Recognize string and computed keys in `accessor-pairs` descriptors",
+    "test_files": [
+     "tests/lib/rules/accessor-pairs.js"
+    ],
+    "src_files": [
+     "lib/rules/accessor-pairs.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/accessor-pairs.js"
+   },
+   {
+    "id": "eslint-899065e55",
+    "fix": "899065e556c90ef72d96b2228182d93aa5e9570d",
+    "report": "Preserve inline `type` modifier in `no-useless-rename` autofix",
+    "test_files": [
+     "tests/lib/rules/no-useless-rename.js"
+    ],
+    "src_files": [
+     "lib/rules/no-useless-rename.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/no-useless-rename.js"
+   },
+   {
+    "id": "eslint-df71e34a8",
+    "fix": "df71e34a8bfa084feb5c6423fbdd5ad807ea13b3",
+    "report": "Skip `no-prototype-builtins` suggestion when object is `super`",
+    "test_files": [
+     "tests/lib/rules/no-prototype-builtins.js"
+    ],
+    "src_files": [
+     "lib/rules/no-prototype-builtins.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/no-prototype-builtins.js"
+   },
+   {
+    "id": "eslint-ec52157ec",
+    "fix": "ec52157ec22ab9a4d3ccf446b58274b04923242f",
+    "report": "Check __proto__ and assignment targets in `func-names`",
+    "test_files": [
+     "tests/lib/rules/func-names.js"
+    ],
+    "src_files": [
+     "lib/rules/func-names.js"
+    ],
+    "oracle": "npx mocha --timeout 20000 tests/lib/rules/func-names.js"
+   }
+  ]
+ }
+]

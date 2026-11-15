@@ -74,6 +74,20 @@ Run one test file with:
 
 When you are done, reply with one line: DONE."""
 
+CHAIN_PROMPT = """You are working in a checkout of {repo} ({url}).
+
+{count} separate bugs are reported below. A test that reproduces each one is already in the
+working tree, but you are not told which tests they are. For every bug, find its test and fix the
+library source code so that it passes. Do not change any test.
+
+{reports}
+
+Run one test file with:
+    {suite}
+
+Work through the bugs one at a time, and keep going until every one of them passes.
+When you are done with all of them, reply with one line: DONE."""
+
 TOOLS = "Read,Edit,Write,Glob,Grep,Bash,Task"
 
 
@@ -154,12 +168,27 @@ def load_tasks(only: list[str] | None) -> list[dict]:
     for f in sorted((HERE / "tasks").glob("*.json")):
         tasks += json.loads(f.read_text())
     if only:
-        tasks = [t for t in tasks if t["id"] in only]
-    return tasks
+        return [t for t in tasks if t["id"] in only]
+    # A chain task is a long Track B run: many bugs, many turns, a much larger budget. Running
+    # one by accident as part of a Track A sweep would be expensive, so it must be named.
+    return [t for t in tasks if not t.get("chain")]
+
+
+def bugs_of(t: dict) -> list[dict]:
+    """The bugs a task asks the agent to fix.
+
+    A chain task (Track B) carries several, so that one session covers many bugs and the context
+    accumulates across the whole run. A plain fix-replay task is a chain of one, which keeps the
+    rest of the runner the same for both tracks.
+    """
+    if t.get("chain"):
+        return t["chain"]
+    return [{"id": t["id"], "fix": t["fix"], "report": t["report"],
+             "test_files": t["test_files"], "oracle": t["oracle"]}]
 
 
 def snapshot(work: Path, t: dict) -> Path:
-    """Parent commit + the fix commit's test files, as a fresh one-commit repo, deps installed."""
+    """Base commit + each bug's test files, as a fresh one-commit repo, deps installed."""
     snap = work / "snap" / t["id"]
     tree = snap / "tree"
     if (snap / "ready").exists():
@@ -171,16 +200,17 @@ def snapshot(work: Path, t: dict) -> Path:
     git(f"archive --format=tar -o {archive.as_posix()} {t['base']}", ver)
     subprocess.run(["tar", "-xf", str(archive), "-C", str(tree)], check=True)
     archive.unlink()
-    kept = set(git(f"ls-tree -r --name-only {t['fix']}", ver).splitlines())
-    for path in t["test_files"]:
-        dst = tree / path
-        if path in kept:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            data = subprocess.run(["git", "show", f"{t['fix']}:{path}"], cwd=ver,
-                                  capture_output=True, check=True).stdout
-            dst.write_bytes(data)
-        elif dst.exists():
-            dst.unlink()
+    for bug in bugs_of(t):
+        kept = set(git(f"ls-tree -r --name-only {bug['fix']}", ver).splitlines())
+        for path in bug["test_files"]:
+            dst = tree / path
+            if path in kept:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                data = subprocess.run(["git", "show", f"{bug['fix']}:{path}"], cwd=ver,
+                                      capture_output=True, check=True).stdout
+                dst.write_bytes(data)
+            elif dst.exists():
+                dst.unlink()
     git("init -q", tree)
     git("add -A", tree)
     git("-c user.name=pilot -c user.email=pilot@example.invalid -c commit.gpgsign=false commit -q -m snapshot", tree)
@@ -294,7 +324,13 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         "DISABLE_TELEMETRY": "1",
     })
     setup_arm(arm, run, repo, a.aaes, env, a.read_shaping)
-    if a.prompt_style == "discover":
+    bugs = bugs_of(t)
+    if t.get("chain"):
+        reports = "\n".join(f"{i}. {b['report']}" for i, b in enumerate(bugs, 1))
+        prompt = CHAIN_PROMPT.format(repo=t["repo"], url=t["url"], count=len(bugs),
+                                     reports=reports,
+                                     suite=t.get("discover_cmd") or bugs[0]["oracle"])
+    elif a.prompt_style == "discover":
         prompt = DISCOVER_PROMPT.format(repo=t["repo"], url=t["url"], report=t["report"],
                                         suite=t.get("discover_cmd") or t["oracle"])
     else:
@@ -322,15 +358,22 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
     except json.JSONDecodeError:
         res = {}
 
-    # Oracle on the original tests.
+    # Oracle on the original tests. A chain task has one oracle per bug, and each is recorded
+    # separately: a run that fixes four bugs out of ten is not the same as a run that fixes none.
     tracked = set(git("ls-files", repo).splitlines())
-    for path in t["test_files"]:
-        if path in tracked:
-            git(f"checkout -q HEAD -- {shlex.quote(path)}", repo)
-        elif (repo / path).exists():
-            (repo / path).unlink()
-    ocode, oout = sh(t["oracle"], repo, env=env, timeout=1200)
-    (run / "oracle.txt").write_text(oout, encoding="utf-8", errors="replace")
+    for bug in bugs:
+        for path in bug["test_files"]:
+            if path in tracked:
+                git(f"checkout -q HEAD -- {shlex.quote(path)}", repo)
+            elif (repo / path).exists():
+                (repo / path).unlink()
+    per_bug, sections = {}, []
+    for bug in bugs:
+        bcode, bout = sh(bug["oracle"], repo, env=env, timeout=1200)
+        per_bug[bug["id"]] = bcode == 0
+        sections.append(f"=== {bug['id']} exit={bcode} ===\n{bout}")
+    ocode = 0 if all(per_bug.values()) else 1
+    (run / "oracle.txt").write_text("\n".join(sections), encoding="utf-8", errors="replace")
     diff = git("--no-pager diff --numstat HEAD", repo)
     changed = [l.split("\t") for l in diff.splitlines() if l.count("\t") == 2]
     diff_lines = sum(int(x[0]) + int(x[1]) for x in changed if x[0].isdigit() and x[1].isdigit())
@@ -371,6 +414,8 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         "files_changed": len(changed), "hook_errors": hook_errors,
         "aaes_report": bool(report), "model": a.model, "claude": a.claude_version,
         "prompt_style": a.prompt_style, "read_shaping": a.read_shaping,
+        "bugs_total": len(bugs), "bugs_passed": sum(per_bug.values()),
+        "per_bug": per_bug if t.get("chain") else None,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 

@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v0.8
+# Benchmark and Evaluation Protocol — AAES v0.9
 
 ## 0. Change log
 | Version | Date | Change |
@@ -10,7 +10,8 @@
 | 0.5 | 2026-11-04 | Read-rebound gate adds ≤ 1 follow-up call per shaped result (MET-015). Early local dogfooding suggests agents fetch most of smaller shaped files anyway, so the read threshold is being evaluated at a higher value (details in the private findings). |
 | 0.6 | 2026-11-10 | Added the **M2 pilot protocol**: a small, runnable first study (headless runs, arms A / A′ / C / C-shadow, public corpus, pre-registered metrics, pilot to estimate ψ before the powered study). Cache-aware result cost now uses the same formula as `aaes report` and `aaes mine` (`k` later requests until compaction). Shadow mode added as a control arm. |
 | 0.7 | 2026-11-14 | Ran the M2 pilot (240 runs, 20 tasks, 4 arms, 3 replications) and recorded the result below. The pilot is **inconclusive on efficiency** because the corpus almost never produces a shapeable tool result. Added the corpus requirement that a task must generate large tool output, and a pre-run coverage check. |
-| 0.8 | 2026-11-15 | Built the large-output corpus (ESLint, 10 verified tasks) and the shaping-coverage pre-check (`bench/pilot/coverage_check.py`). The probe lifted coverage from 2.9% to 16.7%, still under the gate, and showed why: **72.5% of tool-result bytes come from `Bash`**, which the M1 shapers do not handle. Corpus size is not the binding constraint; the tool mix is. |
+| 0.8 | 2026-11-15 | Built the large-output corpus (ESLint, 10 verified tasks) and the shaping-coverage pre-check (`bench/pilot/coverage_check.py`). The corpus passes the gate at **48.1% byte coverage**. The gate is weighted by bytes, not by results: tool-result sizes are heavy-tailed, and counting results would reject every realistic corpus. The probe also showed that **72.5% of tool-result bytes come from `Bash`**, which the M1 shapers do not handle, and that a short fix-replay run cannot show the cache-weighted effect. |
+| 0.9 | 2026-11-15 | Added the **powered study design**: two tracks. Track A keeps the short fix-replay runs and reports direct savings only, with the limitation pre-registered. Track B introduces the **chain task** - one long session over many bugs from a single base - so the cache weighting can accumulate and be measured rather than assumed. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -268,6 +269,71 @@ shaped tools.
 
 The probe is small (3 tasks, one replication) and the byte shares come from four repositories on
 one model, so they size the problem rather than settle it.
+
+## Powered study design (2026-11-15)
+
+The pilot and the probe together rule out a single run shape. The direct saving and the
+cache-weighted saving need different sessions, so the powered study runs two tracks and reports
+them separately. Neither track is a noninferiority claim on its own.
+
+### Track A — direct savings, short runs
+
+The existing fix-replay harness on the ESLint corpus, arms A / A′ / C / C-shadow, with
+`--prompt-style discover` and `--read-shaping`. It is ready: the corpus passes the coverage gate.
+
+- **Primary endpoint:** delivered tool-result bytes per task, and cost-weighted input per task.
+- **Secondary:** task success, edit failures, rebound calls, wall-clock time.
+- **Pre-registered limitation.** A fix-replay run is about 7 turns, so the number of later
+  requests that re-read a shaped result is near its floor. Track A therefore reports the direct
+  reduction and states that it does not estimate the cache-weighted saving. A null result here is
+  evidence about direct savings only.
+
+### Track B — cache-weighted savings, long sessions
+
+The saving on a shaped result is multiplied by the number of later requests that re-read it
+before compaction. That count scales with session length, so the session has to be long by
+construction rather than by luck.
+
+**The chain task.** One session covers many bugs from a single base commit:
+
+1. The base is the parent of the earliest fix commit in the set, so no fix in the set is present.
+2. The test files of every fix in the set are copied onto that base, so every one of them fails.
+3. The agent receives all K bug reports in one prompt and works through them in one session, so
+   the context accumulates across the whole run instead of resetting per bug.
+4. The oracle is that every one of the K tests passes. Per-bug pass or fail is recorded as well,
+   so a partial run still carries information.
+
+**Validity conditions, verified before a chain is used:**
+
+- every fix's source diff applies cleanly to the base,
+- no two fixes in the set touch the same test file,
+- each test fails on the base and passes once the fixes are applied.
+
+For ESLint, all ten mined tasks satisfy the first two conditions against base `61949398`, a span
+of about three weeks of history.
+
+**Building and running a chain.** `bench/pilot/make_chain.py` builds the task from tasks that
+`mine_tasks.py` has already verified individually, checks the static conditions, and with
+`--verify` runs every oracle on the base and again with the fixes applied:
+
+    python bench/pilot/make_chain.py --work <work> --repo eslint --out bench/pilot/tasks/eslint-chain.json --verify
+    python bench/pilot/run_pilot.py --work <work> --tasks eslint-chain-10 --max-turns 200 --timeout 7200 --budget <cap> ...
+
+A chain task is never part of a default sweep; `run_pilot.py` runs one only when it is named in
+`--tasks`, because a Track B run is long and costs far more than a Track A task. Per-bug pass or
+fail is written to `runs.jsonl` as `per_bug`, with `bugs_passed` and `bugs_total`.
+
+**Reported alongside the endpoints:** the mean number of later requests per shaped result,
+measured per run. The cache weighting is then visible in the result rather than assumed, and
+Track B can be compared directly against the pilot's floor and against the figure that real
+sessions show.
+
+### Open item: powering the success comparison
+
+The pilot's ψ (the share of tasks where the baseline and the treatment disagree on success) came
+out at 0, because every one of the 240 runs succeeded. A zero discordant-pair share cannot size a
+noninferiority test. Until a run shape produces disagreement, the sample size for the success
+claim uses a conservative assumed ψ, stated with the result, rather than a measured one.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
