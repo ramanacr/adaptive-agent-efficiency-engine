@@ -214,14 +214,23 @@ cheaply, before any powered run.
 
 **Probe:** 3 ESLint tasks, arm C only, one replication, $0.60.
 
-| Corpus and configuration | Shapeable results | Covered | Coverage |
+| Corpus and configuration | Shapeable results | Covered | Byte coverage |
 |---|---:|---:|---:|
-| Pilot corpus, located prompt, read shaping off | 103 | 3 | 2.9% |
-| ESLint, discover prompt, read shaping on | 6 | 1 | 16.7% |
+| Pilot corpus (commander.js), located prompt, read shaping off | 36 | 0 | 0.0% |
+| ESLint, discover prompt, read shaping on | 6 | 1 | **48.1%** |
 
-Coverage improved by about six times and the one shaped read cut 6,204 bytes to 1,511 (76%),
-so the shaper works when it fires. It is still below the 30% gate, and the event log shows that
-more tasks would not fix it. **The agent does most of its file reading through `Bash`.**
+**The corpus passes the gate.** The one shaped read cut 6,204 bytes to 1,511 (76%).
+
+The gate is measured on bytes, not on results, and the first version of
+`coverage_check.py` got this wrong: counting results it read 16.7% and failed the corpus. Tool
+result sizes are heavy-tailed, so a corpus is judged by the share of shapeable *bytes* the
+shaper acted on. A replay over real sessions shows the same shape - the shaper acts on about
+5% of read and search results, and those results carry roughly a fifth of the raw tokens in
+their families. Counting results would reject every realistic corpus, this project's own
+sessions included.
+
+The corpus clears the gate, but the event log shows where the rest of the output goes.
+**The agent does most of its file reading through `Bash`.**
 
 | Tool family | Events | Raw bytes | Share |
 |---|---:|---:|---:|
@@ -238,17 +247,24 @@ shaped tools.
 
 **Consequences for the study.**
 - The M1 shapers (`Read`, `Grep`) address at most about 27% of tool-result bytes on this
-  workload, and the realised share is far smaller. A powered study of the M1 scope can only
-  measure that minority, however large the corpus is.
-- Shell output is mostly test-runner output, which `03_BENCHMARK_PLAN.md` and the roadmap
-  already assign to the M3 parsers. The pilot evidence raises its priority: it is where the
-  bytes are.
-- The 30% coverage gate stays. It is doing its job - it stopped a second inconclusive study for
-  about a dollar.
-- Two ways forward, and the choice is a scope decision, not a benchmarking one: land the M3
-  shell and test-output parsers and then measure, or run a powered study of the M1 scope on a
-  deliberately read-and-search-heavy corpus while stating plainly that it does not represent
-  ordinary agent work.
+  workload. Shell output is the other 72.5%, and it is not a large-output tail: the mean `Bash`
+  result is 1,363 bytes, nothing exceeds 16 KB, and 81% of the commands already contain a pipe
+  (`| tail -30`, `| head -6`). The agent truncates its own output, so a shell parser would have
+  little left to remove. Of those bytes, 48.8% are file reads (`cat`, `sed -n`, `head`), 35.3%
+  test-runner output, 9.6% `git`.
+- `shape::shell_read_target` only recognises a single `cat`/`type`/`Get-Content` invocation, so
+  the compound, piped commands the agent actually writes are classed `not_handled`. Widening it
+  would raise coverage, but the bytes behind it are small, so it is not where the gain is.
+- **A pilot run is too short to show the real effect.** The saving is cache-weighted: it is
+  multiplied by the number of later requests that re-read the result before compaction. Real
+  sessions re-read a tool result about 200 times; a 7-turn fix-replay run re-reads it a handful
+  of times. The same shaping decision is therefore worth about two orders of magnitude less per
+  run here than in ordinary use, which is why the pilot's per-run differences sat inside the
+  noise. A powered study must either use long, multi-turn sessions or report direct savings and
+  state that it does not measure the cache-weighted effect.
+- The 30% gate stays, now byte-weighted. It is doing its job: it stopped a second inconclusive
+  study for about a dollar, and it passes the corpus that can actually exercise the shaper.
+
 
 The probe is small (3 tasks, one replication) and the byte shares come from four repositories on
 one model, so they size the problem rather than settle it.

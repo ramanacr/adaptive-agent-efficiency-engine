@@ -48,20 +48,33 @@ class Tally:
         self.shapeable = 0
         self.covered = 0
         self.raw = 0
+        self.covered_raw = 0
         self.delivered = 0
         self.reasons: collections.Counter = collections.Counter()
 
     def add(self, e: dict) -> None:
+        raw = e.get("raw_bytes", 0) or 0
         self.shapeable += 1
-        self.raw += e.get("raw_bytes", 0) or 0
+        self.raw += raw
         self.delivered += e.get("delivered_bytes", 0) or 0
         if e.get("action") in COVERED:
             self.covered += 1
+            self.covered_raw += raw
         else:
             self.reasons[f'{e.get("kind")}:{e.get("reason")}'] += 1
 
     @property
     def coverage(self) -> float:
+        """Share of shapeable BYTES the shaper acted on.
+
+        Tool-result sizes are heavy-tailed: a few large results hold most of the bytes, and they
+        are the only ones worth shaping. Counting results instead would judge a corpus by how
+        many small reads it makes, which is not what the study measures.
+        """
+        return self.covered_raw / self.raw if self.raw else 0.0
+
+    @property
+    def count_coverage(self) -> float:
         return self.covered / self.shapeable if self.shapeable else 0.0
 
 
@@ -97,13 +110,14 @@ def main() -> int:
         print(f"no AAES events under {a.work}/runs -- nothing to check", file=sys.stderr)
         return 2
 
-    print(f"# Shaping coverage (threshold {a.min:.0%})\n")
-    print("| Arm | Shapeable | Covered | Coverage | Raw bytes | Delivered | Saved |")
-    print("|---|---:|---:|---:|---:|---:|---:|")
+    print(f"# Shaping coverage (threshold {a.min:.0%} of shapeable bytes)\n")
+    print("| Arm | Shapeable | Covered | Byte coverage | Result coverage | Raw bytes | "
+          "Delivered | Saved |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|")
     for arm in sorted(per_arm):
         t = per_arm[arm]
         print(f"| {arm} | {t.shapeable} | {t.covered} | {t.coverage:.1%} | "
-              f"{t.raw:,} | {t.delivered:,} | {t.raw - t.delivered:,} |")
+              f"{t.count_coverage:.1%} | {t.raw:,} | {t.delivered:,} | {t.raw - t.delivered:,} |")
     print()
 
     for arm in sorted(per_arm):
@@ -114,7 +128,7 @@ def main() -> int:
           + ", ".join(f"{k} {v}" for k, v in sorted(other.items())))
 
     if a.by_task:
-        print("\n| Arm | Task | Shapeable | Covered | Coverage |")
+        print("\n| Arm | Task | Shapeable | Covered | Byte coverage |")
         print("|---|---|---:|---:|---:|")
         for (arm, task), t in sorted(per_task.items(), key=lambda kv: kv[1].coverage):
             print(f"| {arm} | {task} | {t.shapeable} | {t.covered} | {t.coverage:.1%} |")
