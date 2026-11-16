@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.1
+# Benchmark and Evaluation Protocol — AAES v1.2
 
 ## 0. Change log
 | Version | Date | Change |
@@ -14,6 +14,7 @@
 | 0.9 | 2026-11-15 | Added the **powered study design**: two tracks. Track A keeps the short fix-replay runs and reports direct savings only, with the limitation pre-registered. Track B introduces the **chain task** - one long session over many bugs from a single base - so the cache weighting can accumulate and be measured rather than assumed. |
 | 1.0 | 2026-11-16 | Ran **Track A** (63 of 120 runs, stopped on the budget cap). The pre-registered coverage gate **failed at 25.2%** of shapeable bytes, so the result supports no efficiency claim. The C-shadow arm, which is null by construction, moved +23.5% against A, which measures the run-to-run noise floor directly. Shaping was also found to suppress its own opportunity: coverage in the live arm is half the shadow arm's, because the agent reads narrow ranges after seeing a shaped result. |
 | 1.1 | 2026-11-16 | Measured one **chain run** before committing a Track B budget: 131 turns, 10 of 10 bugs fixed, $5.78, and it **passes the coverage gate at 43.8%**. A shaped result is re-read 61 to 112 times, so the cache weighting is off its floor and the net saving (118,580 cost-weighted units) is close to a whole short run's input. It also failed the read rebound gate: **1.6 follow-ups per shaped read** against a limit of one, giving back 66% of the read saving, while search shaping gives back none. |
+| 1.2 | 2026-11-16 | Traced every read rebound in the chain run. **Corrects v1.1**: read shaping is net **+27%** in delivered bytes, not close to self-cancelling; the 66% was a gross-to-net ratio. The real defect is in the gate - its follow-up **count** condition is anti-correlated with its **net saving** condition, so every threshold that improves the net makes the count worse. A change is proposed with evidence, not made. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -108,6 +109,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Economics | Positive net cost reduction on representative workload, not just cherry-picked compressible outputs; reported vs **A′** as well as A | Do not claim cost win otherwise |
 | Re-run | Re-run-instead-of-retrieve rate does not erase measured savings (net tokens incl. re-runs > 0) | Loosen compression for offending families |
 | Read rebound | Net shaped saving > 0 **and ≤ 1 follow-up call per shaped result**, per shaped family (Read, shell file reads, search); `aaes report` shows both | Raise threshold or disable shaping for that family |
+| Read rebound — *defect found 2026-11-16* | The count condition is anti-correlated with the net condition: see "Read rebound, traced". A replacement is proposed there and is not yet applied. | Decide before Track B runs, and report either way |
 | Edit fidelity | Edit failure rate with shaping not significantly higher than without (paired) | Block read shaping release |
 | Performance | p95 additional pass-through overhead ≤20 ms **including cold start** on reference desktop (Windows + Linux); full-run latency measured | Optimize or document exception |
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
@@ -433,12 +435,12 @@ from one chain run is close to the whole input of a short run. That difference i
 buys, and it is what neither earlier study could see.
 
 **Read shaping fails the rebound gate (MET-015).** It draws **1.6 follow-up calls per shaped
-result** against a limit of one, and `families.read.ok` is false. In cost-weighted terms 66% of
-what the read shaper saves is handed straight back when the agent re-fetches what was trimmed.
-Search shaping has no follow-ups at all and keeps everything it saves. On this workload the
-search shaper carries the result and the read shaper is close to self-cancelling. This supports
-the shipped default, which has read shaping off; the Track A and chain runs turned it on
-explicitly with `--read-shaping`.
+result** against a limit of one, and `families.read.ok` is false. Of what the read shaper saves,
+68,423 cost-weighted units of 103,943 come back when the agent re-fetches what was trimmed.
+Search shaping has no follow-ups at all and keeps everything it saves. The next entry traces
+every follow-up and corrects what that ratio means: the read shaper is still net positive, and
+the condition it fails is the call count rather than the saving. Read shaping is off by default;
+the Track A and chain runs turned it on explicitly with `--read-shaping`.
 
 Two results are clean. Edits after a shaped result were 10 calls with **0 failures** (the run's
 one failure was an unshaped edit, `not_found`), so shaping did not damage the agent's ability to
@@ -449,6 +451,55 @@ The analysis this plan specifies bootstraps over tasks, and one chain gives only
 variation, so Track B needs several chains before it can produce an interval. Budget, now measured
 rather than guessed: **$5.78 per chain run**, so one chain across four arms and three replications
 is about $70.
+
+### Read rebound, traced (2026-11-16)
+
+All eight follow-up events in the chain run were examined. Every one is the same move: a shaped
+read, then a `read pass ranged` on the same key. The agent re-reads the file it was just given an
+outline of, with an explicit line range. It did not call `aaes show` once in 131 turns.
+
+| Raw | Shaped to | Follow-ups | Total delivered | Net |
+|---:|---:|---|---:|---:|
+| 5,573 | 1,712 | 4,241 | 5,953 | **-380 (-7%)** |
+| 5,935 | 1,298 | 5,110 | 6,408 | **-473 (-8%)** |
+| 6,204 | 1,511 | 1,955 + 1,747 | 5,213 | +991 (+16%) |
+| 9,762 | 1,857 | 1,505 | 3,362 | +6,400 (+66%) |
+| 12,180 | 1,975 | 4,549 + 398 + 976 | 7,898 | +4,282 (+35%) |
+| **39,654** | | | **28,834** | **+10,820 (+27%)** |
+
+**Correction to the entry above.** That entry said 66% of the read saving is handed back and that
+the read shaper is "close to self-cancelling". The 66% is a gross-to-net ratio, not a loss: read
+shaping is **net +27% in delivered bytes** here, and positive in cost-weighted units as well
+(103,943 saved against 68,423 returned). The gate it fails is the follow-up count, not the saving.
+
+**The gate's count condition is anti-correlated with its value condition.** The 12,180-byte file
+drew three follow-ups and saved 35%. The 5,935-byte file drew one and lost 8%. Counting calls
+prefers the file that loses bytes. Every threshold that improves the net makes the count worse:
+
+| Read threshold | Shaped | Net bytes | Follow-ups per shaped |
+|---|---:|---:|---:|
+| 4,800 bytes (~2,000 tokens, the current default) | 5 | +27% | 1.6 |
+| 6,000 bytes (~2,500 tokens) | 3 | **+41%** | 2.0 |
+| 7,200 bytes (~3,000 tokens) | 2 | **+49%** | 2.0 |
+
+**Proposed change, not yet made.** The read-rebound gate should be net shaped saving and
+cost-weighted net per shaped result, with follow-ups per shaped result kept as a diagnostic
+rather than as a pass condition. A pre-registered gate is not rewritten because it failed, so this
+is recorded as a proposal with its evidence, to be decided before Track B runs and reported either
+way.
+
+**The size threshold looks too low.** `read_threshold_tokens` is 2,000 at `bytes_per_token` 2.4,
+so shaping starts at about 4,800 bytes, where the head plus outline is not much smaller than the
+file. Both net-negative files sat just above that line. This is the first public measurement of
+something the v0.5 entry already suspected from local dogfooding: agents fetch most of a smaller
+shaped file anyway.
+
+**Limits of this evidence.** Five shaped reads in one run: a direction, not a calibration. The
+follow-ups are attributed by key, and Track A's shadow arm showed 44 `read:ranged` passes with no
+shaping at all, so some of these ranged reads would have happened regardless and the true rebound
+is lower than the attributed figure. `aaes replay` cannot settle it offline either, because it
+measures gross savings over past transcripts and has no way to observe a follow-up that shaping
+would have caused.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
