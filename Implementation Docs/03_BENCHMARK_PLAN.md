@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.3
+# Benchmark and Evaluation Protocol — AAES v1.4
 
 ## 0. Change log
 | Version | Date | Change |
@@ -16,6 +16,7 @@
 | 1.1 | 2026-11-16 | Measured one **chain run** before committing a Track B budget: 131 turns, 10 of 10 bugs fixed, $5.78, and it **passes the coverage gate at 43.8%**. A shaped result is re-read 61 to 112 times, so the cache weighting is off its floor and the net saving (118,580 cost-weighted units) is close to a whole short run's input. It also failed the read rebound gate: **1.6 follow-ups per shaped read** against a limit of one, giving back 66% of the read saving, while search shaping gives back none. |
 | 1.2 | 2026-11-16 | Traced every read rebound in the chain run. **Corrects v1.1**: read shaping is net **+27%** in delivered bytes, not close to self-cancelling; the 66% was a gross-to-net ratio. The real defect is in the gate - its follow-up **count** condition is anti-correlated with its **net saving** condition, so every threshold that improves the net makes the count worse. A change is proposed with evidence, not made. |
 | 1.3 | 2026-11-16 | **Gate decision: MET-015 stands, and the v1.2 proposal is withdrawn.** A follow-up costs an extra request, measured at **12,458 cost-weighted units**; charging it makes read shaping net **-64,144** units, not positive. Break-even is **0.99 follow-ups per shaped read** against a gate pre-registered at 1. Only the reporting changes: express both conditions in one currency so the threshold is derived per run. |
+| 1.4 | 2026-11-16 | Ran the chain in **C-shadow** to settle attribution. Ranged re-reading is the agent's baseline habit: **45.9% of read events in C against 46.2% in C-shadow**, and lower per repeated file under shaping. MET-015 has no baseline subtraction, so it charges the shaper for the agent's own pattern. The **-64,144** figure is therefore the full-attribution end of a range, and the read verdict is open rather than negative. The thresholds still stand; the rebound measurement needs the shadow-controlled form. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -97,7 +98,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 **Re-run-instead-of-retrieve rate** = re-executions of a command with a valid handle / compacted results delivered.
 **Context occupancy** = Σ (tool-result tokens × turns retained). **Compactions per task.**
 **Footer overhead** = footer tokens / delivered tokens; **pass-through rate** = results under the size threshold / all results.
-**Read rebound** (MET-015) = tokens of follow-up ranged reads, `aaes show` and "ask twice" full reads after a shaped read of the same file in the same context. **Net shaped saving** = raw − delivered − rebound. **Follow-ups per shaped result** = follow-up calls ÷ shaped results; a follow-up to an outlined section is expected, so this guards the extra-call cost rather than counting failures.
+**Read rebound** (MET-015) = tokens of follow-up ranged reads, `aaes show` and "ask twice" full reads after a shaped read of the same file in the same context. **Net shaped saving** = raw − delivered − rebound. **Follow-ups per shaped result** = follow-up calls ÷ shaped results; a follow-up to an outlined section is expected, so this guards the extra-call cost rather than counting failures. Measured in a live arm alone this is an **upper bound**: the agent makes ranged re-reads at a high baseline rate with no shaping present, so the attributable figure subtracts the same rate measured in C-shadow.
 **Edit failure rate** (MET-016) = failed Edit/MultiEdit calls / all Edit/MultiEdit calls.
 
 ## Initial decision gates (proposed thresholds, not observed)
@@ -111,6 +112,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Re-run | Re-run-instead-of-retrieve rate does not erase measured savings (net tokens incl. re-runs > 0) | Loosen compression for offending families |
 | Read rebound | Net shaped saving > 0 **and ≤ 1 follow-up call per shaped result**, per shaped family (Read, shell file reads, search); `aaes report` shows both | Raise threshold or disable shaping for that family |
 | Read rebound — *decided 2026-11-16* | **Unchanged.** The proposal to demote the count condition was withdrawn: a follow-up costs a whole request, and charging it puts break-even at 0.99 follow-ups per shaped read, within 1% of the pre-registered threshold. See "Gate decision: MET-015 stands". | Report `saved − follow_up_units − follow_ups × units_per_request` so the threshold is derived per run |
+| Read rebound — *measurement corrected 2026-11-16* | The thresholds stand, but the rebound **count** is uncontrolled: ranged re-reading runs at 46% of read events with or without shaping. Use `follow-ups per shaped read in C − the same rate in C-shadow`; treat the uncontrolled count as an upper bound. See "Shadow-controlled rebound". | Run C and C-shadow on the same chains so the baseline exists per family |
 | Edit fidelity | Edit failure rate with shaping not significantly higher than without (paired) | Block read shaping release |
 | Performance | p95 additional pass-through overhead ≤20 ms **including cold start** on reference desktop (Windows + Linux); full-run latency measured | Optimize or document exception |
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
@@ -562,6 +564,56 @@ making before read shaping is reconsidered.
 registered with. Read shaping stays off by default, which both the shipped configuration and this
 analysis agree on, and the study reports the read family as failing its gate rather than quietly
 passing under a weaker one.
+
+### Shadow-controlled rebound (2026-11-16)
+
+The entry above left one question open: how many of the eight follow-ups shaping actually caused.
+`eslint-chain-10` was run again in **C-shadow**, where the hooks run and record what they would
+have shaped but the agent receives byte-identical output to an unmodified run. 150 turns, $7.36,
+all 10 bugs fixed.
+
+| | Arm C (shaping live) | C-shadow (output untouched) |
+|---|---:|---:|
+| Read events | 37 | 52 |
+| Files read more than once | 10 | 12 |
+| Later ranged reads on a repeated file | 17 | 24 |
+| **Share of read events that are later ranged reads** | **45.9%** | **46.2%** |
+| Per repeated file | 1.7 | 2.0 |
+
+**Re-reading a file with a line range is this agent's normal working pattern.** Nearly half of all
+its reads are a ranged re-read of a file it has already opened, and the rate is the same to within
+a third of a percentage point whether shaping is on or off. Per repeated file the rate is lower
+under shaping, 1.7 against 2.0, so the shaping-attributable excess comes out at **-0.3**.
+
+**MET-015 has no baseline subtraction.** It counts any ranged read of a shaped key as a rebound
+caused by shaping. On this evidence most of the eight follow-ups would have happened anyway, so
+the metric charges the shaper for the agent's own habit. The rebound figure to use is the
+shadow-controlled one:
+
+    attributable rebound = (follow-ups per shaped read in C) − (the same rate in C-shadow)
+
+**The read verdict is open, not negative.** The entry above computed -64,144 units by charging
+shaping for all eight follow-ups. That is the full-attribution end of the range. At the
+attribution this run suggests, the follow-up bytes are not a cost of shaping at all and most of
+the gross 103,943 units stands. Neither end is claimed here. The honest statement is that the
+sign of the read-shaping result depends on an attribution that one pair of sessions cannot fix.
+
+**Weak corroboration, offered as such.** Arm C cost $5.78 in 131 turns; C-shadow, which hands the
+agent untouched output, cost $7.36 in 150 turns. Shaping ran cheaper than the arm it should match.
+With one run per arm and a noise floor of about a quarter of the mean from Track A, this is
+suggestive and nothing more.
+
+**Limits.** The two arms took different paths, 27 distinct files against 20, so these are not the
+same reads being compared; the 45.9% against 46.2% figure is the strongest number here precisely
+because it normalises that away. The direct like-for-like test - was a shadow-shaped file later
+re-read - rests on the two reads C-shadow shadow-shaped, and neither was revisited. One pair of
+sessions gives a direction and not a rate.
+
+**What changes.** The MET-015 thresholds stand, as decided above. What needs correcting is the
+rebound measurement rather than the criterion: `aaes report` should carry the shadow-controlled
+rate wherever a shadow arm exists, and the uncontrolled count should be labelled as an upper
+bound on the cost of shaping. Track B should run C and C-shadow on the same chains so the baseline
+is available for every family.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
