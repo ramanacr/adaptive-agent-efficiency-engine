@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.0
+# Benchmark and Evaluation Protocol — AAES v1.1
 
 ## 0. Change log
 | Version | Date | Change |
@@ -13,6 +13,7 @@
 | 0.8 | 2026-11-15 | Built the large-output corpus (ESLint, 10 verified tasks) and the shaping-coverage pre-check (`bench/pilot/coverage_check.py`). The corpus passes the gate at **48.1% byte coverage**. The gate is weighted by bytes, not by results: tool-result sizes are heavy-tailed, and counting results would reject every realistic corpus. The probe also showed that **72.5% of tool-result bytes come from `Bash`**, which the M1 shapers do not handle, and that a short fix-replay run cannot show the cache-weighted effect. |
 | 0.9 | 2026-11-15 | Added the **powered study design**: two tracks. Track A keeps the short fix-replay runs and reports direct savings only, with the limitation pre-registered. Track B introduces the **chain task** - one long session over many bugs from a single base - so the cache weighting can accumulate and be measured rather than assumed. |
 | 1.0 | 2026-11-16 | Ran **Track A** (63 of 120 runs, stopped on the budget cap). The pre-registered coverage gate **failed at 25.2%** of shapeable bytes, so the result supports no efficiency claim. The C-shadow arm, which is null by construction, moved +23.5% against A, which measures the run-to-run noise floor directly. Shaping was also found to suppress its own opportunity: coverage in the live arm is half the shadow arm's, because the agent reads narrow ranges after seeing a shaped result. |
+| 1.1 | 2026-11-16 | Measured one **chain run** before committing a Track B budget: 131 turns, 10 of 10 bugs fixed, $5.78, and it **passes the coverage gate at 43.8%**. A shaped result is re-read 61 to 112 times, so the cache weighting is off its floor and the net saving (118,580 cost-weighted units) is close to a whole short run's input. It also failed the read rebound gate: **1.6 follow-ups per shaped read** against a limit of one, giving back 66% of the read saving, while search shaping gives back none. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -398,6 +399,56 @@ without the earlier pilot's runs on other repositories being averaged into it.
 **Consequence.** The remaining 57 runs were not bought. The gate says this corpus cannot measure
 the treatment, and more runs would estimate the same noise more precisely. Track B exists to
 change the run length, which is the quantity that governs whether any of this is measurable.
+
+### Chain run measurement (2026-11-16)
+
+One chain run, arm C, one replication, before any Track B budget was committed. Track A had just
+shown what a cost estimate taken from a short probe is worth, so the chain was measured rather
+than predicted.
+
+`eslint-chain-10`, arm C, read shaping on: **131 turns, 1,214 s, $5.78, all 10 bugs fixed**, no
+hook errors.
+
+| | Track A run | Chain run |
+|---|---:|---:|
+| Turns | about 16 | **131** |
+| Cost | $0.568 | $5.78 |
+| Byte coverage | 25.2% (fails the gate) | **43.8% (passes)** |
+| Later requests per shaped read | - | **61.2** |
+| Later requests per shaped search | - | **111.5** |
+
+**The cache weighting is no longer at its floor.** A shaped result in this run is re-read 61 to
+112 times before compaction, against a handful in a seven-turn fix-replay run and about 209 in
+ordinary sessions. The chain reaches roughly a third to a half of ordinary use, which is enough
+for the saving to be a large quantity rather than a rounding error:
+
+| Family | Saved (cost-weighted units) | Given back by follow-ups | Net |
+|---|---:|---:|---:|
+| read | 103,943 | 68,423 | 35,520 |
+| search | 83,060 | 0 | 83,060 |
+| **total** | **187,003** | **68,423** | **118,580** |
+
+For scale, a Track A baseline run consumed 127,604 cost-weighted units in total. The net saving
+from one chain run is close to the whole input of a short run. That difference is what run length
+buys, and it is what neither earlier study could see.
+
+**Read shaping fails the rebound gate (MET-015).** It draws **1.6 follow-up calls per shaped
+result** against a limit of one, and `families.read.ok` is false. In cost-weighted terms 66% of
+what the read shaper saves is handed straight back when the agent re-fetches what was trimmed.
+Search shaping has no follow-ups at all and keeps everything it saves. On this workload the
+search shaper carries the result and the read shaper is close to self-cancelling. This supports
+the shipped default, which has read shaping off; the Track A and chain runs turned it on
+explicitly with `--read-shaping`.
+
+Two results are clean. Edits after a shaped result were 10 calls with **0 failures** (the run's
+one failure was an unshaped edit, `not_found`), so shaping did not damage the agent's ability to
+edit what it had read. And there were no hook errors in a 131-turn session.
+
+**What this is not.** It is one run, so every number here is a point estimate with no interval.
+The analysis this plan specifies bootstraps over tasks, and one chain gives only replication-level
+variation, so Track B needs several chains before it can produce an interval. Budget, now measured
+rather than guessed: **$5.78 per chain run**, so one chain across four arms and three replications
+is about $70.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
