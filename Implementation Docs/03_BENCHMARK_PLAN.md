@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v0.9
+# Benchmark and Evaluation Protocol — AAES v1.0
 
 ## 0. Change log
 | Version | Date | Change |
@@ -12,6 +12,7 @@
 | 0.7 | 2026-11-14 | Ran the M2 pilot (240 runs, 20 tasks, 4 arms, 3 replications) and recorded the result below. The pilot is **inconclusive on efficiency** because the corpus almost never produces a shapeable tool result. Added the corpus requirement that a task must generate large tool output, and a pre-run coverage check. |
 | 0.8 | 2026-11-15 | Built the large-output corpus (ESLint, 10 verified tasks) and the shaping-coverage pre-check (`bench/pilot/coverage_check.py`). The corpus passes the gate at **48.1% byte coverage**. The gate is weighted by bytes, not by results: tool-result sizes are heavy-tailed, and counting results would reject every realistic corpus. The probe also showed that **72.5% of tool-result bytes come from `Bash`**, which the M1 shapers do not handle, and that a short fix-replay run cannot show the cache-weighted effect. |
 | 0.9 | 2026-11-15 | Added the **powered study design**: two tracks. Track A keeps the short fix-replay runs and reports direct savings only, with the limitation pre-registered. Track B introduces the **chain task** - one long session over many bugs from a single base - so the cache weighting can accumulate and be measured rather than assumed. |
+| 1.0 | 2026-11-16 | Ran **Track A** (63 of 120 runs, stopped on the budget cap). The pre-registered coverage gate **failed at 25.2%** of shapeable bytes, so the result supports no efficiency claim. The C-shadow arm, which is null by construction, moved +23.5% against A, which measures the run-to-run noise floor directly. Shaping was also found to suppress its own opportunity: coverage in the live arm is half the shadow arm's, because the agent reads narrow ranges after seeing a shaped result. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -334,6 +335,69 @@ The pilot's ψ (the share of tasks where the baseline and the treatment disagree
 out at 0, because every one of the 240 runs succeeded. A zero discordant-pair share cannot size a
 noninferiority test. Until a run shape produces disagreement, the sample size for the success
 claim uses a conservative assumed ψ, stated with the result, rather than a measured one.
+
+### Track A result (2026-11-16)
+
+Track A ran on the ESLint corpus with the discover prompt and read shaping on. It stopped on the
+budget cap after **63 of 120 runs** and $35.78. The per-run cost was about three times the figure
+taken from the three-task probe ($0.568 against $0.201), because the discover prompt on these
+tasks takes 9 to 23 turns rather than the probe's 7. A sweep sized from a probe's mean cost
+should carry that margin.
+
+Two changes were forced before the runs. The pinned agent version moved: the pilot and the probe
+ran Claude Code 2.1.321, and only 2.1.233 was on the machine, so the three probe rows were
+removed from the results file and every Track A run is on one version. The runs used the
+subscription rather than an API key, after the key returned `Credit balance is too low`; the
+runner treated that as the agent being unable to run, wrote no rows and stopped, which is the
+intended behaviour and cost nothing.
+
+**The pre-registered coverage gate failed.**
+
+| Arm | Shapeable results | Covered | Byte coverage |
+|---|---:|---:|---:|
+| C | 172 | 10 | **25.2%** |
+| C-shadow | 132 | 15 | 52.1% |
+
+Coverage is below the 30% threshold, so the efficiency numbers below do not support a claim in
+either direction. They are reported because the arms themselves are informative.
+
+| Arm | Runs | Success | Cost-weighted input / run | Paired difference against A (95% bootstrap) |
+|---|---:|---:|---:|---|
+| A | 16 | 100% | 127,604 | - |
+| A′ | 17 | 100% | 151,064 | +31.5% [+3,194, +80,958] |
+| C | 15 | 100% | 165,727 | +43.9% [-1,744, +123,846] |
+| C-shadow | 15 | 100% | 150,436 | +23.5% [-6,275, +80,830] |
+
+psi = 0 of 15 discordant pairs, 0 hook errors, no stop-rule task, no compaction in any run.
+
+**C-shadow measures the noise floor directly.** It gives the agent byte-identical tool output to
+A, so it is a null arm by construction, and it still moved +23.5%. The run-to-run spread on this
+endpoint is therefore about a quarter of the mean, and C's +43.9% sits inside it. Nothing in this
+table is evidence that the sidecar costs more, and nothing in it could have been evidence that it
+costs less. A study on this endpoint, at this run length, cannot resolve an effect of a few
+percent however many runs it buys.
+
+**Shaping suppresses its own opportunity.** On the same tasks, coverage in C is half what it is
+in C-shadow, and the pass reasons say why: `read:ranged` accounts for 70 of C's passes against 44
+of C-shadow's. After the agent sees a shaped result it reads narrow ranges, and a narrow range is
+already small enough to pass. The treatment changes the agent's later behaviour, so coverage
+measured in a shadow arm overstates what the live arm will see. The corpus gate should be read
+from the live arm, as it is.
+
+**A′ is the one interval that excludes zero,** and it has a mechanism: prompt-only instructions
+add a `CLAUDE.md` to every request, so they cost input tokens on every turn whether or not they
+save output. With four comparisons at this noise level the finding is suggestive, not settled.
+
+**Harness faults found and fixed.** Two runs were lost to
+`fatal: Unable to create '.../.git/index.lock': File exists`, because the agent can leave a git
+process running in the run's repository and on Windows the loser of that race dies; the exception
+aborted the whole run. Replication 1 is missing two of its forty cells for this reason. Git calls
+now wait the lock out. The analyzer also had no task filter, so a new study could not be reported
+without the earlier pilot's runs on other repositories being averaged into it.
+
+**Consequence.** The remaining 57 runs were not bought. The gate says this corpus cannot measure
+the treatment, and more runs would estimate the same noise more precisely. Track B exists to
+change the run length, which is the quantity that governs whether any of this is measurable.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
