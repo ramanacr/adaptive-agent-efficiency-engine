@@ -155,12 +155,23 @@ def git(args: str, cwd: Path) -> str:
     parts = shlex.split(args)
     if "diff" in parts:  # it is a subcommand option, not a top-level one
         parts.insert(parts.index("diff") + 1, "--no-ext-diff")
-    p = subprocess.run(["git", "-c", "core.pager=cat", *parts],
-                       cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       env=dict(env, GIT_PAGER="cat"))
-    if p.returncode:
-        raise RuntimeError(f"git {args}: {(p.stdout + p.stderr)[-800:]}")
-    return p.stdout
+    # The agent can leave a git process of its own running in the run's repo, and on Windows the
+    # loser of that race dies on `index.lock: File exists`. That used to abort the whole run and
+    # lose it, so the lock is waited out, and a lock with no live holder is cleared.
+    for attempt in range(6):
+        p = subprocess.run(["git", "-c", "core.pager=cat", *parts],
+                           cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", env=dict(env, GIT_PAGER="cat"))
+        if not p.returncode:
+            return p.stdout
+        out = p.stdout + p.stderr
+        if "index.lock" not in out or attempt == 5:
+            raise RuntimeError(f"git {args}: {out[-800:]}")
+        lock = cwd / ".git" / "index.lock"
+        if attempt >= 3 and lock.exists() and time.time() - lock.stat().st_mtime > 30:
+            lock.unlink(missing_ok=True)
+        time.sleep(2)
+    raise RuntimeError(f"git {args}: gave up waiting for index.lock")
 
 
 def load_tasks(only: list[str] | None) -> list[dict]:

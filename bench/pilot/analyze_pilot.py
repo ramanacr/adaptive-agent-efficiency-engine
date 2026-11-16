@@ -67,8 +67,16 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", type=Path, required=True)
     ap.add_argument("--md", type=Path)
+    ap.add_argument("--task", help="only tasks whose id contains this text, so one study can be "
+                                   "analyzed while earlier runs stay in the same results file")
+    ap.add_argument("--title", default="M2 pilot results", help="heading for the report")
     a = ap.parse_args()
     runs = [json.loads(l) for l in (a.work / "results" / "runs.jsonl").read_text().splitlines() if l.strip()]
+    if a.task:
+        runs = [r for r in runs if a.task in r["task"]]
+    if not runs:
+        print(f"no runs match {a.task!r}", file=sys.stderr)
+        return 2
     for r in runs:
         r.update(transcript_metrics(a.work / "runs" / r["task"] / f"{r['arm']}-r{r['rep']}"))
     arms = [x for x in ["A", "Aprime", "C", "Cshadow"] if any(r["arm"] == x for r in runs)]
@@ -84,7 +92,7 @@ def main() -> int:
     out = []
     p = out.append
     spent = sum(r.get("cost_usd") or 0 for r in runs)
-    p("# M2 pilot results\n")
+    p(f"# {a.title}\n")
     p(f"{len(runs)} runs, {len(by)} tasks ({len(complete)} with every arm), arms {', '.join(arms)}. "
       f"Model {runs[0].get('model')}, {runs[0].get('claude')}. Cost reported by Claude Code: ${spent:.2f}.\n")
     p("| Arm | Runs | Success | Cost-weighted input / run | Cost / run (USD) | Cost / success (USD) | Tool calls | `aaes show` | Compactions | Wall (s) |")
