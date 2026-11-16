@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.2
+# Benchmark and Evaluation Protocol — AAES v1.3
 
 ## 0. Change log
 | Version | Date | Change |
@@ -15,6 +15,7 @@
 | 1.0 | 2026-11-16 | Ran **Track A** (63 of 120 runs, stopped on the budget cap). The pre-registered coverage gate **failed at 25.2%** of shapeable bytes, so the result supports no efficiency claim. The C-shadow arm, which is null by construction, moved +23.5% against A, which measures the run-to-run noise floor directly. Shaping was also found to suppress its own opportunity: coverage in the live arm is half the shadow arm's, because the agent reads narrow ranges after seeing a shaped result. |
 | 1.1 | 2026-11-16 | Measured one **chain run** before committing a Track B budget: 131 turns, 10 of 10 bugs fixed, $5.78, and it **passes the coverage gate at 43.8%**. A shaped result is re-read 61 to 112 times, so the cache weighting is off its floor and the net saving (118,580 cost-weighted units) is close to a whole short run's input. It also failed the read rebound gate: **1.6 follow-ups per shaped read** against a limit of one, giving back 66% of the read saving, while search shaping gives back none. |
 | 1.2 | 2026-11-16 | Traced every read rebound in the chain run. **Corrects v1.1**: read shaping is net **+27%** in delivered bytes, not close to self-cancelling; the 66% was a gross-to-net ratio. The real defect is in the gate - its follow-up **count** condition is anti-correlated with its **net saving** condition, so every threshold that improves the net makes the count worse. A change is proposed with evidence, not made. |
+| 1.3 | 2026-11-16 | **Gate decision: MET-015 stands, and the v1.2 proposal is withdrawn.** A follow-up costs an extra request, measured at **12,458 cost-weighted units**; charging it makes read shaping net **-64,144** units, not positive. Break-even is **0.99 follow-ups per shaped read** against a gate pre-registered at 1. Only the reporting changes: express both conditions in one currency so the threshold is derived per run. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -109,7 +110,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Economics | Positive net cost reduction on representative workload, not just cherry-picked compressible outputs; reported vs **A′** as well as A | Do not claim cost win otherwise |
 | Re-run | Re-run-instead-of-retrieve rate does not erase measured savings (net tokens incl. re-runs > 0) | Loosen compression for offending families |
 | Read rebound | Net shaped saving > 0 **and ≤ 1 follow-up call per shaped result**, per shaped family (Read, shell file reads, search); `aaes report` shows both | Raise threshold or disable shaping for that family |
-| Read rebound — *defect found 2026-11-16* | The count condition is anti-correlated with the net condition: see "Read rebound, traced". A replacement is proposed there and is not yet applied. | Decide before Track B runs, and report either way |
+| Read rebound — *decided 2026-11-16* | **Unchanged.** The proposal to demote the count condition was withdrawn: a follow-up costs a whole request, and charging it puts break-even at 0.99 follow-ups per shaped read, within 1% of the pre-registered threshold. See "Gate decision: MET-015 stands". | Report `saved − follow_up_units − follow_ups × units_per_request` so the threshold is derived per run |
 | Edit fidelity | Edit failure rate with shaping not significantly higher than without (paired) | Block read shaping release |
 | Performance | p95 additional pass-through overhead ≤20 ms **including cold start** on reference desktop (Windows + Linux); full-run latency measured | Optimize or document exception |
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
@@ -500,6 +501,67 @@ shaping at all, so some of these ranged reads would have happened regardless and
 is lower than the attributed figure. `aaes replay` cannot settle it offline either, because it
 measures gross savings over past transcripts and has no way to observe a follow-up that shaping
 would have caused.
+
+### Gate decision: MET-015 stands (2026-11-16)
+
+The entry above proposed demoting the follow-up-count condition to a diagnostic, on the grounds
+that it is anti-correlated with net bytes. **The proposal is withdrawn. The gate stands as
+pre-registered.** The argument for demoting it was missing a cost.
+
+A follow-up is not only its bytes. It is an extra request, and an extra request re-reads the whole
+conversation context. Measured on the chain run: **12,458 cost-weighted units per request** across
+129 requests. Charging each follow-up one request changes the sign of the result.
+
+| | Units |
+|---|---:|
+| read, saved | 103,943 |
+| read, follow-up bytes (weighted) | -68,423 |
+| read, follow-up call cycles (8 × 12,458) | -99,664 |
+| **read, net** | **-64,144** |
+| search, saved | 83,060 |
+| search, follow-ups | 0 |
+| **search, net** | **+83,060** |
+
+So the earlier "+27% in delivered bytes" was right about bytes and wrong as a verdict: counted in
+the currency that is actually billed, read shaping is net negative on this run. Search shaping is
+unambiguously positive.
+
+**The threshold was well chosen.** Break-even, from the measured figures, is at **0.99 follow-up
+calls per shaped read**. The gate was pre-registered at ≤ 1 before any of this was measured. It is
+not an arbitrary round number that happened to fail; it is within one percent of where the
+arithmetic puts the break-even, because one follow-up costs about one request and one request
+costs about what one shaped read saves.
+
+**What changes.** Nothing in the criterion, and one thing in how it is reported. The two
+conditions stay, but `aaes report` should express them in one currency, charging each follow-up a
+request:
+
+    net = saved_units − follow_up_units − (follow_ups × units_per_request)
+
+Then the count threshold is derived from the data of each run rather than assumed, and a family
+whose follow-ups are cheap because its sessions are short is not judged by the same round number
+as one whose sessions are long. The count stays visible either way.
+
+**Attribution is the one real uncertainty.** Track A's shadow arm shows the agent making ranged
+reads with no shaping present, so not all eight follow-ups were caused by shaping. The sign of the
+result depends on how many were:
+
+| Share of follow-ups caused by shaping | Net units |
+|---|---:|
+| 100% (8 calls) | -64,144 |
+| 75% (6 calls) | -22,122 |
+| 50% (4 calls) | +19,900 |
+| 25% (2 calls) | +61,921 |
+
+Read shaping is somewhere between marginally positive and clearly negative, and which one cannot
+be settled from a single arm. Measuring it needs a chain run in C-shadow, where the agent sees
+unshaped output and its ranged reads are the baseline rate. That is one run, and it is worth
+making before read shaping is reconsidered.
+
+**Consequence for Track B.** The gate is unchanged, so Track B runs against the criterion it was
+registered with. Read shaping stays off by default, which both the shipped configuration and this
+analysis agree on, and the study reports the read family as failing its gate rather than quietly
+passing under a weaker one.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
