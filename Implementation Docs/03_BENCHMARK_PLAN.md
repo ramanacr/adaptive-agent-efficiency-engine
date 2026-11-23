@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.6
+# Benchmark and Evaluation Protocol — AAES v1.7
 
 ## 0. Change log
 | Version | Date | Change |
@@ -19,6 +19,7 @@
 | 1.4 | 2026-11-16 | Ran the chain in **C-shadow** to settle attribution. Ranged re-reading is the agent's baseline habit: **45.9% of read events in C against 46.2% in C-shadow**, and lower per repeated file under shaping. MET-015 has no baseline subtraction, so it charges the shaper for the agent's own pattern. The **-64,144** figure is therefore the full-attribution end of a range, and the read verdict is open rather than negative. The thresholds still stand; the rebound measurement needs the shadow-controlled form. |
 | 1.5 | 2026-11-23 | **The C / C-shadow chain pair replicates** (C 24.4% below C-shadow, about 2% spread per arm), but the arm-A anchor run exposed an **unpinned model**: Claude Code auto-updated and the `sonnet` alias moved from Sonnet 5 to Sonnet 5.5. The harness now records `served_models`, refuses mixed-agent comparisons and tags each series. The pinned Sonnet 5.5 series **fails the coverage gate at 0.0%**: the model reads and edits through `Bash` (0 `Read` calls), which M1 does not shape. Shell file-read shaping becomes the precondition for further study. |
 | 1.6 | 2026-11-23 | **Corrects v1.5.** Shell file-read shaping is not the precondition v1.5 named. Checked against all 261 tool results of the pinned series: none exceeds 10 KB, the largest is a 7.4 KB test run, and every file read is a narrow `sed -n` range the agent chose. Whole-file shell reads are already shaped by M1. On this stack the read and search shapers find no output large enough to act on; any further saving needs a different source, and test-runner output is the only candidate seen. |
+| 1.7 | 2026-11-23 | Checked **test-runner output**, the last candidate source. It is about half of all tool-result weight on Sonnet 5.5, but the agent pipes **all 146** `mocha` calls through `grep`, `tail` or `head` itself. What could still be removed without losing information - framework stack frames and repeated failure lines - is about **2.5% of cost-weighted input** at most, below the measured noise. Not built. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -730,6 +731,47 @@ could reduce without costing follow-ups. Any further saving on this stack has to
 different source. The only candidate visible in these runs is test-runner output (`npx mocha`, up
 to 7.4 KB, repeated after each fix), and whether shaping it is safe and worth it is a separate
 design question, not a measured result.
+
+### Test-runner output, checked (2026-11-23)
+
+The entry above left test-runner output as the only candidate source on Sonnet 5.5. It was
+measured on the six pinned runs before any design work. Cost-weighted figures here use the
+estimate the plan uses elsewhere: 2.4 bytes per token, written to cache once at x1.25, then read
+at x0.1 by every later request in the session.
+
+| Per run (mean of six) | Cost-weighted units |
+|---|---:|
+| Whole run, cost-weighted input | about 400,000 |
+| All tool results | about 95,000 (24%) |
+| Results of commands that run tests | about 53,000 (48% to 67% of tool-result weight, by run) |
+
+**The agent already shapes its own test output.** All 146 `mocha` invocations in the six runs are
+piped through a filter, for example `grep -E "^  [0-9]+\) " -A3`, `tail -30` or `head -250`. None
+is unfiltered. On Sonnet 5, 20 of 99 were. What reaches the agent is the failure list it asked
+for, so a shaper that cut it would withhold chosen lines and cause follow-ups, as with ranged
+reads.
+
+**What could still go without losing information:**
+
+| Candidate | Per run | Share of input |
+|---|---:|---:|
+| Stack frames inside `node_modules` or `node:internal` | about 7,850 | about 2.0% |
+| Repeated failure lines in one result (for example the same `Error:` message for every case) | about 2,070 | about 0.5% |
+| **Ceiling** | about 9,900 | **about 2.5%** |
+
+**Not built.** The ceiling is below every noise figure this study has measured: about 7% spread
+inside one arm with two replications here, and about a quarter of the mean on Track A's short
+runs. Showing a 2.5% effect would need many paid replications. Framework stack frames are also
+not always noise - a failure inside a dependency is diagnosed from them - so the small gain comes
+with a real fidelity risk.
+
+**Where this leaves the efficiency question.** Together with the shell-read check, the evidence is
+consistent: on Sonnet 5.5 with Claude Code 2.1.330, the agent already does most of what AAES does.
+It reads narrow ranges, filters test output and caps searches, and its sessions cost about a
+quarter of Sonnet 5's on the same chain. On this corpus and stack there is no source large enough
+for AAES shaping to produce a measurable saving. The Sonnet 5 result (C 24.4% below C-shadow)
+remains valid for that stack only. Whether other corpora - larger files, noisier tools, other
+languages - give the current model unfiltered output is untested.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
