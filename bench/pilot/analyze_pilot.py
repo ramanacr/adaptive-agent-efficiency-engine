@@ -70,15 +70,30 @@ def main() -> int:
     ap.add_argument("--task", help="only tasks whose id contains this text, so one study can be "
                                    "analyzed while earlier runs stay in the same results file")
     ap.add_argument("--title", default="M2 pilot results", help="heading for the report")
+    ap.add_argument("--tag", default="", help="analyze the series run with this --tag")
+    ap.add_argument("--allow-mixed", action="store_true",
+                    help="compare rows served by different models or agent versions anyway")
     a = ap.parse_args()
-    runs = [json.loads(l) for l in (a.work / "results" / "runs.jsonl").read_text().splitlines() if l.strip()]
+    name = f"runs-{a.tag}.jsonl" if a.tag else "runs.jsonl"
+    runs = [json.loads(l) for l in (a.work / "results" / name).read_text().splitlines() if l.strip()]
     if a.task:
         runs = [r for r in runs if a.task in r["task"]]
     if not runs:
         print(f"no runs match {a.task!r}", file=sys.stderr)
         return 2
+    # An arm comparison is only meaningful on one agent. Rows from before `served_models` was
+    # recorded carry only the requested model, which may have been an alias.
+    agents = {(r.get("claude"), tuple(sorted((r.get("served_models") or {r.get("model"): 0}))))
+              for r in runs}
+    if len(agents) > 1 and not a.allow_mixed:
+        print("refusing to compare runs from different agents:", file=sys.stderr)
+        for claude, models in sorted(agents, key=str):
+            print(f"  {claude}  {', '.join(map(str, models))}", file=sys.stderr)
+        print("narrow with --task or --tag, or pass --allow-mixed", file=sys.stderr)
+        return 2
     for r in runs:
-        r.update(transcript_metrics(a.work / "runs" / r["task"] / f"{r['arm']}-r{r['rep']}"))
+        rel = r.get("run_dir") or f"{r['task']}/{r['arm']}-r{r['rep']}"
+        r.update(transcript_metrics(a.work / "runs" / rel))
     arms = [x for x in ["A", "Aprime", "C", "Cshadow"] if any(r["arm"] == x for r in runs)]
     # task -> arm -> list of runs
     by = defaultdict(lambda: defaultdict(list))

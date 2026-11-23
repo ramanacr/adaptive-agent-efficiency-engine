@@ -314,8 +314,34 @@ def transcripts(projects: Path, session_id: str | None) -> list[tuple[Path, Path
     return sorted((f, f.relative_to(projects)) for f in files)
 
 
+def run_name(arm: str, rep: int, tag: str) -> str:
+    """Folder name of one run. A tag keeps a new series from overwriting an earlier one."""
+    return f"{arm}-r{rep}-{tag}" if tag else f"{arm}-r{rep}"
+
+
+def served_models(tdir: Path) -> dict[str, int]:
+    """Model ids the API actually served, counted over assistant messages.
+
+    `--model` may be an alias such as `sonnet`, and an alias moves when the agent updates: the
+    first arm-A chain run asked for `sonnet` and was served a newer model than the other arms.
+    The row records what was served, so mixed rows can be refused rather than compared.
+    """
+    seen: dict[str, int] = {}
+    for f in sorted(tdir.rglob("*.jsonl")):
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                v = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if v.get("type") == "assistant":
+                m = (v.get("message") or {}).get("model")
+                if m:
+                    seen[m] = seen.get(m, 0) + 1
+    return seen
+
+
 def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict:
-    run = work / "runs" / t["id"] / f"{arm}-r{rep}"
+    run = work / "runs" / t["id"] / run_name(arm, rep, a.tag)
     rmtree(run)
     run.mkdir(parents=True)
     repo = run / "repo"
@@ -424,6 +450,8 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         "duration_api_ms": res.get("duration_api_ms"), "diff_lines": diff_lines,
         "files_changed": len(changed), "hook_errors": hook_errors,
         "aaes_report": bool(report), "model": a.model, "claude": a.claude_version,
+        "served_models": served_models(tdir), "tag": a.tag or None,
+        "run_dir": f"{t['id']}/{run_name(arm, rep, a.tag)}",
         "prompt_style": a.prompt_style, "read_shaping": a.read_shaping,
         "bugs_total": len(bugs), "bugs_passed": sum(per_bug.values()),
         "per_bug": per_bug if t.get("chain") else None,
@@ -454,6 +482,10 @@ def main() -> int:
                     help="api: isolated config + AAES_ANTHROPIC_API_KEY; subscription: your login, "
                          "user settings/hooks/MCP left out, transcripts under ~/.claude/projects")
     ap.add_argument("--keep-repo", action="store_true")
+    ap.add_argument("--tag", default="",
+                    help="name a series: runs go to <arm>-r<rep>-<tag> and results to "
+                         "results/runs-<tag>.jsonl, so earlier runs are neither skipped nor "
+                         "overwritten and the budget counts only this series")
     ap.add_argument("--prepare-only", action="store_true", help="build snapshots, run nothing")
     a = ap.parse_args()
     a.claude_version = subprocess.run([a.claude, "--version"], capture_output=True, text=True).stdout.strip()
@@ -466,7 +498,7 @@ def main() -> int:
         print("snapshots ready")
         return 0
     key = api_key() if a.auth == "api" else None
-    res_path = a.work / "results" / "runs.jsonl"
+    res_path = a.work / "results" / (f"runs-{a.tag}.jsonl" if a.tag else "runs.jsonl")
     res_path.parent.mkdir(parents=True, exist_ok=True)
     done = []
     if res_path.exists():

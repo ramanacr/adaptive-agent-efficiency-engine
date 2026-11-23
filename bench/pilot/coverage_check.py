@@ -26,12 +26,19 @@ SHAPEABLE = ("read", "search", "shell_read")
 COVERED = ("shaped", "shadow")
 
 
-def events(work: Path):
-    """Yield (task, arm, event) for every AAES session event under the work folder."""
+def events(work: Path, tag: str = ""):
+    """Yield (task, arm, event) for every AAES session event in one series of runs.
+
+    Run folders are `<arm>-r<rep>` or, for a tagged series, `<arm>-r<rep>-<tag>`. Only the
+    requested series is read, so a series on a different model never dilutes another.
+    """
     for p in work.glob("runs/*/*/aaes-home/sessions/*/events.jsonl"):
         parts = p.as_posix().split("/")
         task, run = parts[-6], parts[-5]
-        arm = run.rsplit("-r", 1)[0]
+        bits = run.split("-", 2)
+        if (bits[2] if len(bits) == 3 else "") != tag:
+            continue
+        arm = bits[0]
         with open(p, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
@@ -89,13 +96,14 @@ def main() -> int:
                     help="only tasks whose id contains this text, so one corpus can be checked "
                          "while earlier runs stay in the same work folder")
     ap.add_argument("--by-task", action="store_true", help="also print a per-task table")
+    ap.add_argument("--tag", default="", help="read the series run with this --tag")
     a = ap.parse_args()
 
     per_arm: dict[str, Tally] = collections.defaultdict(Tally)
     per_task: dict[tuple[str, str], Tally] = collections.defaultdict(Tally)
     other = collections.Counter()
 
-    for task, arm, e in events(a.work):
+    for task, arm, e in events(a.work, a.tag):
         if a.arm and arm != a.arm:
             continue
         if a.task and a.task not in task:
