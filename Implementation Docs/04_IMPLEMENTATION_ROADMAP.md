@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v1.6
+# Implementation Roadmap — AAES v1.7
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -21,6 +21,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 1.4 | 2026-11-16 | **Gate decided: MET-015 stands.** The v1.3 proposal is withdrawn. A follow-up costs a whole request (12,458 cost-weighted units measured), which makes read shaping net **-64,144** units rather than positive, and puts break-even at **0.99** follow-ups per shaped read against a gate pre-registered at 1. |
 | 1.5 | 2026-11-16 | Ran the chain in **C-shadow**. Ranged re-reading is the agent's baseline habit (**45.9%** of read events in C against **46.2%** in C-shadow), so MET-015 charges the shaper for behaviour it does not cause and the **-64,144** figure is an upper-bound end of a range. The read verdict is **open**, not negative. Thresholds stand; the rebound measurement needs a shadow baseline. |
 | 1.6 | 2026-11-23 | The C / C-shadow chain pair **replicates** (C 24.4% below C-shadow). The arm-A run exposed **model drift** (the `sonnet` alias moved to Sonnet 5.5 after a Claude Code auto-update); the harness now pins and records the served model. On Sonnet 5.5 the coverage gate **fails at 0.0%** because the agent reads and edits only through `Bash`. **Shell file-read shaping moves ahead of Track B.** |
+| 1.7 | 2026-11-23 | **Corrects v1.6.** Shell file-read shaping is withdrawn as the next step. No tool result in the pinned Sonnet 5.5 series exceeds 10 KB, every file read is a narrow `sed -n` range, and whole-file shell reads are already shaped. The shapers have nothing to act on at this stack; test-runner output is the only candidate source seen. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
@@ -118,7 +119,8 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - ✅ Chain pair replicated (2026-11-23): second C and C-shadow runs on Sonnet 5 / Claude Code 2.1.233 land within about 2% of the first. C is **24.4% below C-shadow**, all four runs 10 of 10 bugs, and ranged re-reads per repeated file are 1.71 against 1.70 pooled. Still no arm-A anchor on that stack.
 - ✅ Harness pins the model (2026-11-23): the arm-A run had been served by Sonnet 5.5 under Claude Code 2.1.330, because `--model sonnet` is an alias and the agent auto-updated. `run_pilot.py` now records `served_models` and takes `--tag` for a named series; `analyze_pilot.py` refuses to mix agent versions or served models; `coverage_check.py` reads one series.
 - ⚠️ **Sonnet 5.5 bypasses M1 shaping (2026-11-23).** Pinned series, A / C / C-shadow x 2, all 10 of 10 bugs, $4.00: **coverage 0.0%**. The agent made 0 `Read` calls and 1 `Grep` call across six runs; it reads with `sed -n`, edits with `python` and searches with `grep` inside `Bash`. The C -16.1% against A is spread, not saving: C delivered every byte unchanged. Model and agent version changed together, so which one moved the tool mix is not yet separated.
-- ⏳ **Shell file-read shaping** (`sed -n`, `cat`, `head`, a `python` print of a file) is now the precondition for any efficiency study on the default stack, ahead of Track B.
+- ❌ ~~Shell file-read shaping as the precondition for further study~~ (withdrawn 2026-11-23). Checked before building: 261 tool results across six runs, none over 10 KB, largest 7.4 KB (`npx mocha`). Every file read is a `sed -n` range the agent chose, and whole-file `cat` / `type` / `Get-Content` is already shaped. Shaping a chosen range would force follow-ups (MET-015).
+- ⏳ Find a shapeable source on the current stack before another efficiency series. Only candidate seen: test-runner output, repeated after each fix. Design question, not a measured result.
 - ⏳ Track B should run C and C-shadow on the same chains, so the shadow-controlled rebound rate exists for every family rather than being reconstructed afterwards.
 - ⏳ Read threshold: shaping starts at about 4,800 bytes, where the head and outline are not much smaller than the file, and both net-negative reads sat just above that line. This is the first public measurement of what the v0.5 benchmark entry suspected from local dogfooding. Five shaped reads in one run is a direction, not a calibration.
 - ⏳ Track B proper: one chain gives no task-level interval, so more chains must be mined before the bootstrap the plan specifies can run. Budget from the measured figure: about $70 per chain across four arms and three replications.

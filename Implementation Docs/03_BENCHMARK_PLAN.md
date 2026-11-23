@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.5
+# Benchmark and Evaluation Protocol — AAES v1.6
 
 ## 0. Change log
 | Version | Date | Change |
@@ -18,6 +18,7 @@
 | 1.3 | 2026-11-16 | **Gate decision: MET-015 stands, and the v1.2 proposal is withdrawn.** A follow-up costs an extra request, measured at **12,458 cost-weighted units**; charging it makes read shaping net **-64,144** units, not positive. Break-even is **0.99 follow-ups per shaped read** against a gate pre-registered at 1. Only the reporting changes: express both conditions in one currency so the threshold is derived per run. |
 | 1.4 | 2026-11-16 | Ran the chain in **C-shadow** to settle attribution. Ranged re-reading is the agent's baseline habit: **45.9% of read events in C against 46.2% in C-shadow**, and lower per repeated file under shaping. MET-015 has no baseline subtraction, so it charges the shaper for the agent's own pattern. The **-64,144** figure is therefore the full-attribution end of a range, and the read verdict is open rather than negative. The thresholds still stand; the rebound measurement needs the shadow-controlled form. |
 | 1.5 | 2026-11-23 | **The C / C-shadow chain pair replicates** (C 24.4% below C-shadow, about 2% spread per arm), but the arm-A anchor run exposed an **unpinned model**: Claude Code auto-updated and the `sonnet` alias moved from Sonnet 5 to Sonnet 5.5. The harness now records `served_models`, refuses mixed-agent comparisons and tags each series. The pinned Sonnet 5.5 series **fails the coverage gate at 0.0%**: the model reads and edits through `Bash` (0 `Read` calls), which M1 does not shape. Shell file-read shaping becomes the precondition for further study. |
+| 1.6 | 2026-11-23 | **Corrects v1.5.** Shell file-read shaping is not the precondition v1.5 named. Checked against all 261 tool results of the pinned series: none exceeds 10 KB, the largest is a 7.4 KB test run, and every file read is a narrow `sed -n` range the agent chose. Whole-file shell reads are already shaped by M1. On this stack the read and search shapers find no output large enough to act on; any further saving needs a different source, and test-runner output is the only candidate seen. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -114,7 +115,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Read rebound | Net shaped saving > 0 **and ≤ 1 follow-up call per shaped result**, per shaped family (Read, shell file reads, search); `aaes report` shows both | Raise threshold or disable shaping for that family |
 | Read rebound — *decided 2026-11-16* | **Unchanged.** The proposal to demote the count condition was withdrawn: a follow-up costs a whole request, and charging it puts break-even at 0.99 follow-ups per shaped read, within 1% of the pre-registered threshold. See "Gate decision: MET-015 stands". | Report `saved − follow_up_units − follow_ups × units_per_request` so the threshold is derived per run |
 | Read rebound — *measurement corrected 2026-11-16* | The thresholds stand, but the rebound **count** is uncontrolled: ranged re-reading runs at 46% of read events with or without shaping. Use `follow-ups per shaped read in C − the same rate in C-shadow`; treat the uncontrolled count as an upper bound. See "Shadow-controlled rebound". | Run C and C-shadow on the same chains so the baseline exists per family |
-| Coverage — *model drift 2026-11-23* | Unchanged threshold. On Sonnet 5.5 (Claude Code 2.1.330) the chain corpus scores **0.0%**, because file reads, edits and searches all go through `Bash`. See "Replication, model drift and the pinned series". | Pin the full model id; shape shell file reads before running another efficiency series |
+| Coverage — *model drift 2026-11-23* | Unchanged threshold. On Sonnet 5.5 (Claude Code 2.1.330) the chain corpus scores **0.0%**, because file reads, edits and searches all go through `Bash`. See "Replication, model drift and the pinned series". | Pin the full model id. Shell file-read shaping would not help (corrected in v1.6, see "Shell reads, checked"); find a shapeable source before another efficiency series |
 | Edit fidelity | Edit failure rate with shaping not significantly higher than without (paired) | Block read shaping release |
 | Performance | p95 additional pass-through overhead ≤20 ms **including cold start** on reference desktop (Windows + Linux); full-run latency measured | Optimize or document exception |
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
@@ -689,12 +690,46 @@ input to save in the first place.
 - The replicated -24.4% (C against C-shadow) holds for Sonnet 5 on Claude Code 2.1.233 only. It
   still has no arm-A anchor on that stack, and the stack is no longer the one users get by default.
 - On the current default stack, AAES as built cannot be measured on this corpus, because there is
-  nothing it handles. Shaping shell file reads (`sed -n`, `cat`, `head`, `python` printing a file)
-  is the precondition for any further efficiency study, not an optional extension.
+  nothing it handles. *(An earlier version of this bullet named shell file-read shaping as the
+  precondition for further study. That was not checked before it was written, and it is wrong; see
+  "Shell reads, checked" below.)*
 - Two changes moved at once - the model and the agent version - so this series cannot say which
   one changed the tool mix. Running `claude-sonnet-5` on 2.1.330 would separate them.
 - Every future series is tagged and records `served_models`, so drift of this kind is caught by
   the analyzer instead of by reading transcripts.
+
+### Shell reads, checked (2026-11-23)
+
+The entry above named shell file-read shaping as the next step. Before building it, the pinned
+series was checked for what such a shaper would act on. It would act on nothing.
+
+| Tool-result size | Bytes, six runs |
+|---|---:|
+| under 2 KB | 124,450 |
+| 2 to 5 KB | 184,336 |
+| 5 to 10 KB | 78,790 |
+| over 10 KB | **0** |
+
+261 tool results, 387,576 bytes in total. The largest single result is 7.4 KB of `npx mocha`
+output. Read shaping passes anything under about 2,000 estimated tokens (about 4.8 KB), and only
+whole-file reads qualify.
+
+- **Whole-file shell reads are already handled.** M1 shapes a single `cat`, `type` or
+  `Get-Content` of a large file (`shell_read_target` / `shell_read_text`). Sonnet 5.5 never issues
+  one: the one `cat` in six runs is piped into `sed -n 60,260p`.
+- **Every file read is a range the agent chose.** A typical call is
+  `sed -n 75,240p lib/rules/no-unneeded-ternary.js`, often chained with a `grep -n` and capped by
+  `| head -N`. Shaping such a read would withhold the exact lines the agent asked for and force a
+  follow-up request, which is the cost MET-015 exists to prevent.
+- **The agent already does what read shaping does.** It reads narrow ranges, caps its own output,
+  and moves on. That is why the run is about four times cheaper than on Sonnet 5.
+
+**Corrected conclusion.** The 0.0% coverage is not a gap that shell shaping can close. On Sonnet
+5.5 with Claude Code 2.1.330, this corpus produces no tool output that the read or search shapers
+could reduce without costing follow-ups. Any further saving on this stack has to come from a
+different source. The only candidate visible in these runs is test-runner output (`npx mocha`, up
+to 7.4 KB, repeated after each fix), and whether shaping it is safe and worth it is a separate
+design question, not a measured result.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
