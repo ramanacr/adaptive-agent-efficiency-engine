@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.4
+# Benchmark and Evaluation Protocol — AAES v1.5
 
 ## 0. Change log
 | Version | Date | Change |
@@ -17,6 +17,7 @@
 | 1.2 | 2026-11-16 | Traced every read rebound in the chain run. **Corrects v1.1**: read shaping is net **+27%** in delivered bytes, not close to self-cancelling; the 66% was a gross-to-net ratio. The real defect is in the gate - its follow-up **count** condition is anti-correlated with its **net saving** condition, so every threshold that improves the net makes the count worse. A change is proposed with evidence, not made. |
 | 1.3 | 2026-11-16 | **Gate decision: MET-015 stands, and the v1.2 proposal is withdrawn.** A follow-up costs an extra request, measured at **12,458 cost-weighted units**; charging it makes read shaping net **-64,144** units, not positive. Break-even is **0.99 follow-ups per shaped read** against a gate pre-registered at 1. Only the reporting changes: express both conditions in one currency so the threshold is derived per run. |
 | 1.4 | 2026-11-16 | Ran the chain in **C-shadow** to settle attribution. Ranged re-reading is the agent's baseline habit: **45.9% of read events in C against 46.2% in C-shadow**, and lower per repeated file under shaping. MET-015 has no baseline subtraction, so it charges the shaper for the agent's own pattern. The **-64,144** figure is therefore the full-attribution end of a range, and the read verdict is open rather than negative. The thresholds still stand; the rebound measurement needs the shadow-controlled form. |
+| 1.5 | 2026-11-23 | **The C / C-shadow chain pair replicates** (C 24.4% below C-shadow, about 2% spread per arm), but the arm-A anchor run exposed an **unpinned model**: Claude Code auto-updated and the `sonnet` alias moved from Sonnet 5 to Sonnet 5.5. The harness now records `served_models`, refuses mixed-agent comparisons and tags each series. The pinned Sonnet 5.5 series **fails the coverage gate at 0.0%**: the model reads and edits through `Bash` (0 `Read` calls), which M1 does not shape. Shell file-read shaping becomes the precondition for further study. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -113,6 +114,7 @@ Added latency = optimized end-to-end time minus matched baseline, reported media
 | Read rebound | Net shaped saving > 0 **and ≤ 1 follow-up call per shaped result**, per shaped family (Read, shell file reads, search); `aaes report` shows both | Raise threshold or disable shaping for that family |
 | Read rebound — *decided 2026-11-16* | **Unchanged.** The proposal to demote the count condition was withdrawn: a follow-up costs a whole request, and charging it puts break-even at 0.99 follow-ups per shaped read, within 1% of the pre-registered threshold. See "Gate decision: MET-015 stands". | Report `saved − follow_up_units − follow_ups × units_per_request` so the threshold is derived per run |
 | Read rebound — *measurement corrected 2026-11-16* | The thresholds stand, but the rebound **count** is uncontrolled: ranged re-reading runs at 46% of read events with or without shaping. Use `follow-ups per shaped read in C − the same rate in C-shadow`; treat the uncontrolled count as an upper bound. See "Shadow-controlled rebound". | Run C and C-shadow on the same chains so the baseline exists per family |
+| Coverage — *model drift 2026-11-23* | Unchanged threshold. On Sonnet 5.5 (Claude Code 2.1.330) the chain corpus scores **0.0%**, because file reads, edits and searches all go through `Bash`. See "Replication, model drift and the pinned series". | Pin the full model id; shape shell file reads before running another efficiency series |
 | Edit fidelity | Edit failure rate with shaping not significantly higher than without (paired) | Block read shaping release |
 | Performance | p95 additional pass-through overhead ≤20 ms **including cold start** on reference desktop (Windows + Linux); full-run latency measured | Optimize or document exception |
 | Model fallback | All mandatory tools remain functional with local model unavailable | Block release if broken |
@@ -614,6 +616,85 @@ rebound measurement rather than the criterion: `aaes report` should carry the sh
 rate wherever a shadow arm exists, and the uncontrolled count should be labelled as an upper
 bound on the cost of shaping. Track B should run C and C-shadow on the same chains so the baseline
 is available for every family.
+
+### Replication, model drift and the pinned series (2026-11-23)
+
+**The C / C-shadow pair replicates.** A second replication of each arm on `eslint-chain-10`
+(Claude Code 2.1.233, Sonnet 5) landed close to the first:
+
+| Run | Cost-weighted input | Cost | Turns | Bugs fixed |
+|---|---:|---:|---:|---:|
+| C-r1 | 1,607,037 | $5.78 | 131 | 10 / 10 |
+| C-r2 | 1,575,662 | $5.90 | 116 | 10 / 10 |
+| C-shadow-r1 | 2,085,413 | $7.36 | 150 | 10 / 10 |
+| C-shadow-r2 | 2,122,324 | $7.39 | 140 | 10 / 10 |
+
+Arm C sits **24.4% below C-shadow**, with about 2% spread inside each arm - far tighter than the
+quarter-of-the-mean noise floor Track A measured on short runs. Pooled over both pairs, later
+ranged reads per repeated file are 1.71 in C and 1.70 in C-shadow, which confirms the previous
+entry: shaping does not raise the agent's ranged re-reading. This was not yet an efficiency
+result, because the chain had no arm A and Track A had shown C-shadow itself drifting against A.
+
+**The arm-A anchor run exposed an unpinned model.** The harness passed `--model sonnet`. Between
+the C / C-shadow runs and the arm-A run, Claude Code auto-updated from 2.1.233 to 2.1.330, and the
+alias moved from `claude-sonnet-5` to `claude-sonnet-5-5`. The arm-A run (10 of 10 bugs) was
+therefore served by a different model on a different agent version, and is not comparable with
+the four runs above. Nothing in the results file flagged it: the row recorded the alias, not the
+model that answered. Three harness changes followed:
+
+1. `run_pilot.py` records `served_models`, the model ids the API actually returned, counted from
+   the transcripts, alongside the requested `--model`.
+2. `analyze_pilot.py` refuses to compare rows whose agent version or served models differ, unless
+   `--allow-mixed` is passed. On the existing chain rows it fires immediately.
+3. `--tag` names a series: runs go to `<arm>-r<rep>-<tag>`, results to `results/runs-<tag>.jsonl`,
+   and the budget counts only that series. `coverage_check.py` reads one series at a time.
+
+The methodology already said to pin agent and model versions. An alias is not a pin; the full
+model id is.
+
+**The pinned series: Sonnet 5.5 gives AAES nothing to shape.** All three arms were re-run twice on
+`claude-sonnet-5-5`, given by full id, on Claude Code 2.1.330, with read shaping on (tag `s55`).
+Every row's `served_models` is that one id.
+
+| Arm | Cost-weighted input (r1 / r2) | Mean | vs A | Requests | Cost / run |
+|---|---|---:|---:|---:|---:|
+| A | 434,646 / 409,062 | 421,854 | - | 45 / 45 | $0.71 |
+| C | 328,235 / 379,584 | 353,909 | -16.1% | 35 / 41 | $0.60 |
+| C-shadow | 390,292 / 424,519 | 407,406 | -3.4% | 42 / 47 | $0.69 |
+
+All six runs fixed 10 of 10 bugs, for $4.00 in total. **The coverage gate fails at 0.0%**: arm C
+saw 13 shapeable results, 11 below the size cap and 2 unparsed, and delivered every byte it
+received. C and C-shadow handed the agent identical output, so the -16.1% is run-to-run spread
+(arm C simply made fewer requests), not a saving. No efficiency claim is made from this series.
+
+The cause is a change in how the agent works:
+
+| | Sonnet 5, 2.1.233 (C-r1) | Sonnet 5.5, 2.1.330 (six runs) |
+|---|---:|---:|
+| `Read` calls | 38 | 0 |
+| `Grep` calls | 25 | 1 in total |
+| `Edit` calls | 16 | 0 or 1 per run |
+| `Bash` calls | 50 | 35 to 46 per run |
+| Tool-result bytes per run | about 140 KB | about 60 KB |
+| Cost-weighted input per run | 1.6 to 2.1 M | 0.33 to 0.43 M |
+
+Sonnet 5.5 reads files with `sed -n`, edits them with `python`, and searches with `grep`, all
+inside `Bash`. M1 shapes the `Read` and search tool results; shell output passes through. The
+v0.8 probe had already found 72.5% of tool-result bytes coming from `Bash`; on this model it is
+nearly all of them. The run is also about four times cheaper than on Sonnet 5, so there is less
+input to save in the first place.
+
+**What this means.**
+
+- The replicated -24.4% (C against C-shadow) holds for Sonnet 5 on Claude Code 2.1.233 only. It
+  still has no arm-A anchor on that stack, and the stack is no longer the one users get by default.
+- On the current default stack, AAES as built cannot be measured on this corpus, because there is
+  nothing it handles. Shaping shell file reads (`sed -n`, `cat`, `head`, `python` printing a file)
+  is the precondition for any further efficiency study, not an optional extension.
+- Two changes moved at once - the model and the agent version - so this series cannot say which
+  one changed the tool mix. Running `claude-sonnet-5` on 2.1.330 would separate them.
+- Every future series is tagged and records `served_models`, so drift of this kind is caught by
+  the analyzer instead of by reading transcripts.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).
