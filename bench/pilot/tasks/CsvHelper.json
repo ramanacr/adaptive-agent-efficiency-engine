@@ -19,7 +19,8 @@
     "src_lines": 55,
     "setup": "if exist global.json del global.json",
     "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~NullableConverterTests|FullyQualifiedName~ReaderRowMock\"",
-    "report": "Fix UseDefaultOnConversionFailure behavior for nullable types when default value is null"
+    "report": "Fix UseDefaultOnConversionFailure behavior for nullable types when default value is null",
+    "discover_cmd": "dotnet test tests/CsvHelper.Tests -f net8.0 --filter FullyQualifiedName~<test class> (for example --filter FullyQualifiedName~GuidConverterTests)"
   },
   {
     "id": "CsvHelper-f9e5fa47d",
@@ -40,7 +41,8 @@
     "src_lines": 43,
     "setup": "if exist global.json del global.json",
     "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~FastDynamicTests\"",
-    "report": "Added nullable to FastDynamicObject."
+    "report": "Added nullable to FastDynamicObject.",
+    "discover_cmd": "dotnet test tests/CsvHelper.Tests -f net8.0 --filter FullyQualifiedName~<test class> (for example --filter FullyQualifiedName~GuidConverterTests)"
   },
   {
     "id": "CsvHelper-d50510ed5",
@@ -61,7 +63,8 @@
     "src_lines": 6,
     "setup": "if exist global.json del global.json",
     "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~GuidConverterTests\"",
-    "report": "\ud83d\udd28 GuidConverter should be consistent"
+    "report": "\ud83d\udd28 GuidConverter should be consistent",
+    "discover_cmd": "dotnet test tests/CsvHelper.Tests -f net8.0 --filter FullyQualifiedName~<test class> (for example --filter FullyQualifiedName~GuidConverterTests)"
   },
   {
     "id": "CsvHelper-3aea6a06e",
@@ -112,6 +115,7 @@
     "src_lines": 26,
     "setup": "if exist global.json del global.json",
     "oracle": "set DOTNET_ROLL_FORWARD=Major&& dotnet test tests/CsvHelper.Tests -f net8.0 -v q --nologo --filter \"FullyQualifiedName~AllowCommentsTests|FullyQualifiedName~BufferSizeTests|FullyQualifiedName~CacheFieldsTests|FullyQualifiedName~CommentTests|FullyQualifiedName~CountBytesTest|FullyQualifiedName~CultureInfoAttributeTests|FullyQualifiedName~DelimiterTests|FullyQualifiedName~DetectColumnCountChangesTests|FullyQualifiedName~DetectDelimiterTests|FullyQualifiedName~DetectDelimiterValuesTests|FullyQualifiedName~EncodingTests|FullyQualifiedName~EscapeTests|FullyQualifiedName~ExceptionMessagesContainRawDataTests|FullyQualifiedName~HasHeaderRecordTests|FullyQualifiedName~IgnoreBlankLinesTests|FullyQualifiedName~IgnoreReferencesTests|FullyQualifiedName~IncludePrivateMembersTests|FullyQualifiedName~InjectionCharactersTests|FullyQualifiedName~InjectionEscapeCharacterTests|FullyQualifiedName~InjectionOptionsTests|FullyQualifiedName~LineBreakInQuotedFieldIsBadDataTests|FullyQualifiedName~MaxFieldSizeTests|FullyQualifiedName~MemberTypesTests|FullyQualifiedName~ModeTests|FullyQualifiedName~NewLineTests|FullyQualifiedName~ProcessFieldBufferSizeTests|FullyQualifiedName~QuoteTests|FullyQualifiedName~TrimOptionsTests|FullyQualifiedName~UseNewObjectForNullReferenceMembersTests|FullyQualifiedName~WhiteSpaceCharsTests\"",
-    "report": "Changed name of CsvConfiguration.FromType to FromAttributes."
+    "report": "Changed name of CsvConfiguration.FromType to FromAttributes.",
+    "discover_cmd": "dotnet test tests/CsvHelper.Tests -f net8.0 --filter FullyQualifiedName~<test class> (for example --filter FullyQualifiedName~GuidConverterTests)"
   }
 ]

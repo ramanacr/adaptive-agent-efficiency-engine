@@ -1,0 +1,181 @@
+[
+  {
+    "id": "clap-1ca55413c",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "4e4ddc47e87dc52924de5f0dca699b43304627f0",
+    "fix": "1ca55413c8e79c3b437054c0d9dc7e4691bd3e71",
+    "test_files": [
+      "tests/builder/help.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/builder/arg.rs"
+    ],
+    "src_lines": 19,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- help::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Bracket values past the minimum"
+  },
+  {
+    "id": "clap-8a93d4be2",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "c7c3184f6ddbbd16abf5be0236b79fd79df8772d",
+    "fix": "8a93d4be29cae11594af8017e48e2a3e2761ee23",
+    "test_files": [
+      "tests/builder/arg_aliases.rs",
+      "tests/builder/arg_aliases_short.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/output/help_template.rs"
+    ],
+    "src_lines": 12,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- arg_aliases:: arg_aliases_short::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Display word alias as singular when unique"
+  },
+  {
+    "id": "clap-420669948",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "eb16ae4d25bf3a7300b4a51bf953bf0d6e6fa62c",
+    "fix": "420669948a1f637e0ee707d907053beb104bfc3d",
+    "test_files": [
+      "tests/builder/help.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/util/escape.rs"
+    ],
+    "src_lines": 2,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- help::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Quote empty default values"
+  },
+  {
+    "id": "clap-af904ae2d",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "36eb896ead6e34fdad83db0e99a544040a8200f4",
+    "fix": "af904ae2d76234593c81029df9fc3017e4520790",
+    "test_files": [
+      "tests/builder/multiple_values.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/parser/parser.rs"
+    ],
+    "src_lines": 10,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- multiple_values::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Resolve regression with value_terminator/last"
+  },
+  {
+    "id": "clap-578cd43a8",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "3dca9ae6cefba3094efd004e02d2d141a63a261a",
+    "fix": "578cd43a88f0009a53ff729cb78163ed30156e93",
+    "test_files": [
+      "tests/builder/groups.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/parser/validator.rs",
+      "clap_builder/src/util/flat_set.rs"
+    ],
+    "src_lines": 21,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- groups::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Don't report conflicting arguments in usage"
+  },
+  {
+    "id": "clap-3604b1311",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "63d73bcf3569bf695d7adef7d7f6d621ac02e4d1",
+    "fix": "3604b13117cbb652c10bb44b228b300d543dcc80",
+    "test_files": [
+      "tests/builder/multiple_values.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/parser/parser.rs"
+    ],
+    "src_lines": 4,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- multiple_values::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Honor positional value_terminator"
+  },
+  {
+    "id": "clap-a062eaf7f",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "15509afcbcb01818fbed85a54f5ea52eeadbdf8f",
+    "fix": "a062eaf7f5c7b4a510ebc02f991efc1ea0f4e754",
+    "test_files": [
+      "tests/builder/help.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/output/help_template.rs"
+    ],
+    "src_lines": 5,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- help::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Default vals on new line if possible values"
+  },
+  {
+    "id": "clap-c2ced1aed",
+    "repo": "clap",
+    "url": "https://github.com/clap-rs/clap",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "79bc1f9f53120f0d9e5ecb01c935ad238ec849b6",
+    "fix": "c2ced1aed1f30d468dfaa6ddbd53403fc667450b",
+    "test_files": [
+      "tests/builder/default_vals.rs"
+    ],
+    "src_files": [
+      "clap_builder/src/builder/arg.rs",
+      "clap_builder/src/parser/parser.rs"
+    ],
+    "src_lines": 75,
+    "setup": "cargo fetch",
+    "oracle": "cargo test -q --test builder -- default_vals::",
+    "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    "report": "Add default_values_if and default_values_ifs to match default_values"
+  }
+]

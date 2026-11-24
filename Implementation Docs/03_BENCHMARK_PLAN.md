@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.8
+# Benchmark and Evaluation Protocol — AAES v1.9
 
 ## 0. Change log
 | Version | Date | Change |
@@ -21,6 +21,7 @@
 | 1.6 | 2026-11-23 | **Corrects v1.5.** Shell file-read shaping is not the precondition v1.5 named. Checked against all 261 tool results of the pinned series: none exceeds 10 KB, the largest is a 7.4 KB test run, and every file read is a narrow `sed -n` range the agent chose. Whole-file shell reads are already shaped by M1. On this stack the read and search shapers find no output large enough to act on; any further saving needs a different source, and test-runner output is the only candidate seen. |
 | 1.7 | 2026-11-23 | Checked **test-runner output**, the last candidate source. It is about half of all tool-result weight on Sonnet 5.5, but the agent pipes **all 146** `mocha` calls through `grep`, `tail` or `head` itself. What could still be removed without losing information - framework stack frames and repeated failure lines - is about **2.5% of cost-weighted input** at most, below the measured noise. Not built. |
 | 1.8 | 2026-11-24 | Tested a **larger-file corpus** (sqlglot, Python, source files up to 11,071 lines; 15 runs on pinned Sonnet 5.5, $3.09). Coverage **fails again: 0.0% in C, 6.5% in C-shadow**. Here the agent does use `Read` and `Grep`, so the v1.5 "Bash only" observation was corpus-specific, but every read is a chosen range and every search is small. File size does not reach the tool output. |
+| 1.9 | 2026-11-24 | Tested **build-system output** (clap in Rust, CsvHelper in .NET; 24 runs on pinned Sonnet 5.5, $3.05). The agent pipes **all 51** `cargo` and `dotnet` build or test calls through `tail` or `grep`, so about 2 KB of build output per run reaches it. Coverage fails on clap (14.9%) and passes on CsvHelper (54.5%) on only 31 KB of raw output. Four corpora now agree: Sonnet 5.5 limits its own tool output before AAES sees it. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -810,6 +811,47 @@ process the agent left running.
 on Sonnet 5.5 the agent reads only what it needs, so AAES read and search shaping finds almost
 nothing to act on. Larger files are not the missing source. Untested: noisier tools that the agent
 cannot filter before it sees them (build systems, package managers, long-running servers).
+
+### Build-system output, checked (2026-11-24)
+
+The previous entry left one family untested: tools whose output the agent cannot filter before
+it sees it, such as build systems. Two corpora were used.
+
+- **clap** (Rust). Eight new fix-replay tasks, mined and verified with `bench/pilot/mine_tasks.py`
+  (`tasks/clap.json`). Setup only fetches dependencies, so every run compiles the crate from
+  scratch, and `cargo test` lists each test it runs unless filtered.
+- **CsvHelper** (.NET). The four existing tasks, now with a discover-style command
+  (`dotnet test ... --filter ...` at normal verbosity) instead of the quiet oracle.
+
+Probe: arms C and C-shadow, one replication, `claude-sonnet-5-5` pinned, Claude Code 2.1.330,
+series `noisy55`. 24 runs, every row served by Sonnet 5.5 only, 23 successful, cost $3.05.
+
+| Corpus | Arm | Shapeable results | Byte coverage | Raw shapeable bytes |
+|---|---|---:|---:|---:|
+| clap | C | 54 | 14.9% | 123,762 |
+| clap | C-shadow | 40 | 10.6% | 98,128 |
+| CsvHelper | C | 9 | 54.5% | 31,044 |
+| CsvHelper | C-shadow | 13 | 51.5% | 32,564 |
+
+**The agent filters build output as well.** All 51 `cargo` and `dotnet` build or test calls in the
+24 runs are filtered: most end in `2>&1 | tail -8` to `tail -30`, the rest in
+`| grep -E "FAILED|panicked|error"`. None is unfiltered. Build and test output that reaches the
+agent totals about 2 KB per run. The compile step, which writes hundreds of lines, never reaches
+it. The agent also runs long builds in the background and waits with `Monitor` (23 calls on clap).
+
+**What is left.** The largest tool results are `Read` calls of 12 to 18 KB in clap's parser and two
+`Grep` results of about 10 KB in CsvHelper, not build output. CsvHelper passes the byte gate, but
+on 31 KB of raw output across four runs, and saves 3.8 KB in total. That is too small to measure.
+
+**Run note.** `clap-a062eaf7f` failed in C-shadow and passed in C. C-shadow changes nothing the agent
+sees, so the failure is run-to-run variation, not an effect of shaping.
+
+**Conclusion.** Four corpora that differ in language, file size and tool family (JavaScript with
+mocha, Python with large files, Rust and .NET with build systems) give the same answer. On
+Sonnet 5.5 with Claude Code 2.1.330 the agent limits its own tool output before AAES sees it:
+it reads chosen ranges, caps searches, and pipes test and build output through `tail` or `grep`.
+No tested family gives AAES a source large enough for a measurable saving on this stack. The
+Sonnet 5 result (C 24.4% below C-shadow) still holds for that stack only.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).

@@ -65,6 +65,15 @@ def sqlglot_oracle(tests: list[str], root: Path) -> str:
     return "python -m unittest " + " ".join(mods) if mods else "echo no test module && exit 1"
 
 
+def clap_oracle(tests: list[str], root: Path) -> str:
+    # Every file under tests/builder/ is a module of the one `builder` integration test, so the
+    # changed files select test modules by name. Quiet output: the oracle only decides success.
+    mods = sorted({Path(t).stem for t in tests if Path(t).stem not in ("main", "utils")})
+    if not mods:
+        return "echo no test module && exit 1"
+    return "cargo test -q --test builder -- " + " ".join(f"{m}::" for m in mods)
+
+
 def csv_oracle(tests: list[str], root: Path) -> str:
     """Newest .NET 8+ target of the test project, run on the installed runtime (roll forward)."""
     proj = root / "tests" / "CsvHelper.Tests" / "CsvHelper.Tests.csproj"
@@ -130,6 +139,19 @@ REPOS: dict[str, dict] = {
         "oracle": sqlglot_oracle,
         "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
     },
+    # Build-system output: every run compiles the crate from scratch (setup only fetches), and
+    # `cargo test` lists each test it runs unless the agent filters it. A probe for tool output
+    # the agent cannot shape before it sees it (03_BENCHMARK_PLAN.md, v1.8 open item).
+    "clap": {
+        "url": "https://github.com/clap-rs/clap",
+        "strata": [2, 13],
+        "src": r"^clap_builder/src/.+\.rs$",
+        "test": r"^tests/builder/.+\.rs$",
+        "lock": "Cargo.lock",
+        "setup": "cargo fetch",
+        "oracle": clap_oracle,
+        "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    },
     "CsvHelper": {
         "url": "https://github.com/JoshClose/CsvHelper",
         "strata": [2, 13],
@@ -139,6 +161,7 @@ REPOS: dict[str, dict] = {
         # Older commits pin an SDK that is not installed; let the installed SDK build them.
         "setup": "if exist global.json del global.json",
         "oracle": csv_oracle,
+        "discover_cmd": "dotnet test tests/CsvHelper.Tests -f net8.0 --filter FullyQualifiedName~<test class> (for example --filter FullyQualifiedName~GuidConverterTests)",
     },
 }
 
