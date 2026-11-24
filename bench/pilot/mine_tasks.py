@@ -58,6 +58,13 @@ def eslint_oracle(tests: list[str], root: Path) -> str:
     return "npx mocha --timeout 20000 " + " ".join(tests)
 
 
+def sqlglot_oracle(tests: list[str], root: Path) -> str:
+    # Run as modules from the repository root, so the checked-out `sqlglot` package is the one
+    # imported and nothing has to be installed. Helper modules without tests are skipped.
+    mods = [t[:-3].replace("/", ".") for t in tests if Path(t).name.startswith("test_")]
+    return "python -m unittest " + " ".join(mods) if mods else "echo no test module && exit 1"
+
+
 def csv_oracle(tests: list[str], root: Path) -> str:
     """Newest .NET 8+ target of the test project, run on the installed runtime (roll forward)."""
     proj = root / "tests" / "CsvHelper.Tests" / "CsvHelper.Tests.csproj"
@@ -108,6 +115,20 @@ REPOS: dict[str, dict] = {
         "setup": "npm install --no-audit --no-fund --no-package-lock",
         "oracle": eslint_oracle,
         "discover_cmd": "npx mocha --timeout 20000 <path to the test file>",
+    },
+    # Large-file repository. sqlglot keeps each layer in one module (`parser.py`,
+    # `generator.py`, `expressions.py`, one file per dialect), several of them thousands of
+    # lines long, so a fix usually lands in a file far larger than any ESLint rule. It is pure
+    # Python with no runtime dependencies and tests with unittest, so a snapshot needs no setup.
+    "sqlglot": {
+        "url": "https://github.com/tobymao/sqlglot",
+        "strata": [2, 13],
+        "src": r"^sqlglot/.+\.py$",
+        "test": r"^tests/.+\.py$",
+        "lock": None,
+        "setup": "",
+        "oracle": sqlglot_oracle,
+        "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
     },
     "CsvHelper": {
         "url": "https://github.com/JoshClose/CsvHelper",

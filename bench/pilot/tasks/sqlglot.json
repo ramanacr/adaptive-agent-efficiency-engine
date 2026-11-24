@@ -1,0 +1,186 @@
+[
+  {
+    "id": "sqlglot-4caae634b",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "6edd409d5b2e6f676a3702120a26a60dbc516931",
+    "fix": "4caae634b78b538ee91173a29c670b6576599315",
+    "test_files": [
+      "tests/dialects/test_dialect.py",
+      "tests/dialects/test_duckdb.py"
+    ],
+    "src_files": [
+      "sqlglot/dialects/clickhouse.py",
+      "sqlglot/dialects/snowflake.py",
+      "sqlglot/parser.py"
+    ],
+    "src_lines": 36,
+    "setup": "",
+    "oracle": "python -m unittest tests.dialects.test_dialect tests.dialects.test_duckdb",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Recognize ORDER BY ALL in ClickHouse and Snowflake"
+  },
+  {
+    "id": "sqlglot-6edd409d5",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "d3a2eafd171021d269e06b5f7a370451d6e9f04c",
+    "fix": "6edd409d5b2e6f676a3702120a26a60dbc516931",
+    "test_files": [
+      "tests/test_build.py"
+    ],
+    "src_files": [
+      "sqlglot/expressions/core.py"
+    ],
+    "src_lines": 5,
+    "setup": "",
+    "oracle": "python -m unittest tests.test_build",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Preserve NOT grouping in binary operators"
+  },
+  {
+    "id": "sqlglot-d3a2eafd1",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "ae01f91cd6364921462b037b01f59f71207dc977",
+    "fix": "d3a2eafd171021d269e06b5f7a370451d6e9f04c",
+    "test_files": [
+      "tests/dialects/test_snowflake.py",
+      "tests/test_build.py"
+    ],
+    "src_files": [
+      "sqlglot/expressions/core.py"
+    ],
+    "src_lines": 15,
+    "setup": "",
+    "oracle": "python -m unittest tests.dialects.test_snowflake tests.test_build",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Preserve grouping in Python binary operators"
+  },
+  {
+    "id": "sqlglot-8806f8e4e",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "7698324083ea8087d9e27976aa43dd23da7e5066",
+    "fix": "8806f8e4e4cb71b61841119175a35b2a986a3561",
+    "test_files": [
+      "tests/dialects/test_snowflake.py"
+    ],
+    "src_files": [
+      "sqlglot/dialects/databricks.py",
+      "sqlglot/tokens.py"
+    ],
+    "src_lines": 2,
+    "setup": "",
+    "oracle": "python -m unittest tests.dialects.test_snowflake",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Parse casts on positional bind parameters"
+  },
+  {
+    "id": "sqlglot-769832408",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "e7f62bab9d7c1a7b646dff70bc72c1270329518d",
+    "fix": "7698324083ea8087d9e27976aa43dd23da7e5066",
+    "test_files": [
+      "tests/dialects/test_bigquery.py"
+    ],
+    "src_files": [
+      "sqlglot/generators/snowflake.py"
+    ],
+    "src_lines": 9,
+    "setup": "",
+    "oracle": "python -m unittest tests.dialects.test_bigquery",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Preserve UNNEST offset column references"
+  },
+  {
+    "id": "sqlglot-b503505dc",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "c6ef895430c3ee7d5d29c9c3cabd07e04064d372",
+    "fix": "b503505dc36e9ba9c3baad7425428d94eabc0c97",
+    "test_files": [
+      "tests/dialects/test_sqlite.py"
+    ],
+    "src_files": [
+      "sqlglot/generators/sqlite.py"
+    ],
+    "src_lines": 8,
+    "setup": "",
+    "oracle": "python -m unittest tests.dialects.test_sqlite",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Flag ambiguous calendar interval arithmetic"
+  },
+  {
+    "id": "sqlglot-c6ef89543",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "5c0943b65871f471cf78163a2614c8ad7174f582",
+    "fix": "c6ef895430c3ee7d5d29c9c3cabd07e04064d372",
+    "test_files": [
+      "tests/dialects/test_postgres.py",
+      "tests/dialects/test_spark.py"
+    ],
+    "src_files": [
+      "sqlglot/generators/databricks.py",
+      "sqlglot/generators/spark.py",
+      "sqlglot/generators/spark2.py"
+    ],
+    "src_lines": 15,
+    "setup": "",
+    "oracle": "python -m unittest tests.dialects.test_postgres tests.dialects.test_spark",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Preserve exact ordered percentiles"
+  },
+  {
+    "id": "sqlglot-5c0943b65",
+    "repo": "sqlglot",
+    "url": "https://github.com/tobymao/sqlglot",
+    "strata": [
+      2,
+      13
+    ],
+    "base": "9d192fa79446d968d5f0fdd5cae19a31217687aa",
+    "fix": "5c0943b65871f471cf78163a2614c8ad7174f582",
+    "test_files": [
+      "tests/dialects/test_sqlite.py"
+    ],
+    "src_files": [
+      "sqlglot/generators/sqlite.py"
+    ],
+    "src_lines": 27,
+    "setup": "",
+    "oracle": "python -m unittest tests.dialects.test_sqlite",
+    "discover_cmd": "python -m unittest <test module, for example tests.dialects.test_duckdb>",
+    "report": "Clamp calendar intervals at month end [CODEX]"
+  }
+]

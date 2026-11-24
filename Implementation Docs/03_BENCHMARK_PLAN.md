@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.7
+# Benchmark and Evaluation Protocol — AAES v1.8
 
 ## 0. Change log
 | Version | Date | Change |
@@ -20,6 +20,7 @@
 | 1.5 | 2026-11-23 | **The C / C-shadow chain pair replicates** (C 24.4% below C-shadow, about 2% spread per arm), but the arm-A anchor run exposed an **unpinned model**: Claude Code auto-updated and the `sonnet` alias moved from Sonnet 5 to Sonnet 5.5. The harness now records `served_models`, refuses mixed-agent comparisons and tags each series. The pinned Sonnet 5.5 series **fails the coverage gate at 0.0%**: the model reads and edits through `Bash` (0 `Read` calls), which M1 does not shape. Shell file-read shaping becomes the precondition for further study. |
 | 1.6 | 2026-11-23 | **Corrects v1.5.** Shell file-read shaping is not the precondition v1.5 named. Checked against all 261 tool results of the pinned series: none exceeds 10 KB, the largest is a 7.4 KB test run, and every file read is a narrow `sed -n` range the agent chose. Whole-file shell reads are already shaped by M1. On this stack the read and search shapers find no output large enough to act on; any further saving needs a different source, and test-runner output is the only candidate seen. |
 | 1.7 | 2026-11-23 | Checked **test-runner output**, the last candidate source. It is about half of all tool-result weight on Sonnet 5.5, but the agent pipes **all 146** `mocha` calls through `grep`, `tail` or `head` itself. What could still be removed without losing information - framework stack frames and repeated failure lines - is about **2.5% of cost-weighted input** at most, below the measured noise. Not built. |
+| 1.8 | 2026-11-24 | Tested a **larger-file corpus** (sqlglot, Python, source files up to 11,071 lines; 15 runs on pinned Sonnet 5.5, $3.09). Coverage **fails again: 0.0% in C, 6.5% in C-shadow**. Here the agent does use `Read` and `Grep`, so the v1.5 "Bash only" observation was corpus-specific, but every read is a chosen range and every search is small. File size does not reach the tool output. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -772,6 +773,43 @@ quarter of Sonnet 5's on the same chain. On this corpus and stack there is no so
 for AAES shaping to produce a measurable saving. The Sonnet 5 result (C 24.4% below C-shadow)
 remains valid for that stack only. Whether other corpora - larger files, noisier tools, other
 languages - give the current model unfiltered output is untested.
+
+### Larger-file corpus, checked (2026-11-24)
+
+The previous entry left one question open: whether a corpus with larger files gives the current
+model unfiltered output. The test used **sqlglot**, a Python SQL parser whose source files are among
+the largest in a popular repository: `parser.py` has 11,071 lines, `generator.py` 6,898, and three
+more exceed 3,000. Eight fix-replay tasks were mined and verified with the existing miner
+(`bench/pilot/mine_tasks.py`, oracle `python -m unittest <modules>`; tasks in
+`bench/pilot/tasks/sqlglot.json`). Each fix touches at least one large file.
+
+Probe: arms C and C-shadow, one replication, `claude-sonnet-5-5` pinned, Claude Code 2.1.330,
+series `sql55`. 15 of 16 runs completed and every row was served by Sonnet 5.5 only. Cost $3.09.
+
+| Arm | Shapeable results | Byte coverage | Raw tool-result bytes |
+|---|---:|---:|---:|
+| C | 45 | 0.0% | 69,155 |
+| C-shadow | 45 | 6.5% | 78,833 |
+
+**The gate fails.** Of 212 tool results, one exceeds 10 KB (a 10.3 KB `unittest` run) and eight
+exceed the 4.8 KB read threshold. No whole-file `cat` appears. The shapers pass results as
+`search:small` (27 to 29 per arm) and `read:ranged` (8 per arm).
+
+**The tool mix differs from the JavaScript corpus, the outcome does not.** On this corpus the agent
+made 22 `Read` and 33 `Grep` calls, against 0 and 1 on the JavaScript chain. So the v1.5
+observation that Sonnet 5.5 works only through `Bash` depends on the corpus, not on the model
+alone. In both cases the agent chooses a narrow range before it reads and caps its searches, so
+the size of the file never reaches the tool output.
+
+**Run notes.** Task `sqlglot-4caae634b` failed in both arms after 7 to 10 turns (the `ORDER BY ALL`
+quoting tests still failed), so it is a weak task. The C-shadow run of `sqlglot-5c0943b65` lost its
+result row when cleanup hit `WinError 32` on the repository folder, most likely held by a test
+process the agent left running.
+
+**Conclusion.** Two corpora that differ in language, file size and tool mix give the same answer:
+on Sonnet 5.5 the agent reads only what it needs, so AAES read and search shaping finds almost
+nothing to act on. Larger files are not the missing source. Untested: noisier tools that the agent
+cannot filter before it sees them (build systems, package managers, long-running servers).
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).

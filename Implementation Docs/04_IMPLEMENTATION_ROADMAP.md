@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v1.8
+# Implementation Roadmap — AAES v1.9
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -23,6 +23,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 1.6 | 2026-11-23 | The C / C-shadow chain pair **replicates** (C 24.4% below C-shadow). The arm-A run exposed **model drift** (the `sonnet` alias moved to Sonnet 5.5 after a Claude Code auto-update); the harness now pins and records the served model. On Sonnet 5.5 the coverage gate **fails at 0.0%** because the agent reads and edits only through `Bash`. **Shell file-read shaping moves ahead of Track B.** |
 | 1.7 | 2026-11-23 | **Corrects v1.6.** Shell file-read shaping is withdrawn as the next step. No tool result in the pinned Sonnet 5.5 series exceeds 10 KB, every file read is a narrow `sed -n` range, and whole-file shell reads are already shaped. The shapers have nothing to act on at this stack; test-runner output is the only candidate source seen. |
 | 1.8 | 2026-11-23 | **Test-runner shaping checked and not built.** The agent filters all 146 `mocha` calls itself; the information-free remainder (framework stack frames, repeated failure lines) is about 2.5% of input, below the noise. On Sonnet 5.5 this corpus offers no source for a measurable saving. |
+| 1.9 | 2026-11-24 | **Larger-file corpus checked** (sqlglot, files up to 11,071 lines): coverage 0.0% in C and 6.5% in C-shadow, below the 30% gate. The agent uses `Read` and `Grep` here, but only for chosen ranges and small searches. Larger files are not the missing source. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
@@ -123,7 +124,8 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - ❌ ~~Shell file-read shaping as the precondition for further study~~ (withdrawn 2026-11-23). Checked before building: 261 tool results across six runs, none over 10 KB, largest 7.4 KB (`npx mocha`). Every file read is a `sed -n` range the agent chose, and whole-file `cat` / `type` / `Get-Content` is already shaped. Shaping a chosen range would force follow-ups (MET-015).
 - ❌ Test-runner output shaping (checked 2026-11-23, not built). About half of tool-result weight on Sonnet 5.5, but all 146 `mocha` calls in six runs are already piped through `grep` / `tail` / `head` by the agent. Ceiling for loss-free trimming (framework stack frames about 2.0%, repeated failure lines about 0.5%) is about **2.5% of cost-weighted input**, below the measured noise, and stack frames are sometimes needed.
 - ⚠️ **On Sonnet 5.5 and this corpus, AAES has no source for a measurable saving.** The agent reads narrow ranges, filters test output and caps searches by itself. The Sonnet 5 result holds for that stack only.
-- ⏳ Open: test whether other corpora (larger files, noisier tools, other languages) still give the current model unfiltered output, before any further efficiency series.
+- ❌ Larger-file corpus (checked 2026-11-24). sqlglot, Python, eight verified tasks, 15 runs on pinned Sonnet 5.5, $3.09: **coverage 0.0% (C) and 6.5% (C-shadow)**. One tool result over 10 KB in 212. The agent made 22 `Read` and 33 `Grep` calls (so "Bash only" was corpus-specific), but every read was a chosen range and every search was small.
+- ⏳ Open: test noisier tools the agent cannot pre-filter (build systems, package managers, long-running servers) before any further efficiency series.
 - ⏳ Track B should run C and C-shadow on the same chains, so the shadow-controlled rebound rate exists for every family rather than being reconstructed afterwards.
 - ⏳ Read threshold: shaping starts at about 4,800 bytes, where the head and outline are not much smaller than the file, and both net-negative reads sat just above that line. This is the first public measurement of what the v0.5 benchmark entry suspected from local dogfooding. Five shaped reads in one run is a direction, not a calibration.
 - ⏳ Track B proper: one chain gives no task-level interval, so more chains must be mined before the bootstrap the plan specifies can run. Budget from the measured figure: about $70 per chain across four arms and three replications.
