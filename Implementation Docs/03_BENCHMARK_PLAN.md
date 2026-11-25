@@ -1,4 +1,4 @@
-# Benchmark and Evaluation Protocol — AAES v1.9
+# Benchmark and Evaluation Protocol — AAES v2.0
 
 ## 0. Change log
 | Version | Date | Change |
@@ -22,6 +22,7 @@
 | 1.7 | 2026-11-23 | Checked **test-runner output**, the last candidate source. It is about half of all tool-result weight on Sonnet 5.5, but the agent pipes **all 146** `mocha` calls through `grep`, `tail` or `head` itself. What could still be removed without losing information - framework stack frames and repeated failure lines - is about **2.5% of cost-weighted input** at most, below the measured noise. Not built. |
 | 1.8 | 2026-11-24 | Tested a **larger-file corpus** (sqlglot, Python, source files up to 11,071 lines; 15 runs on pinned Sonnet 5.5, $3.09). Coverage **fails again: 0.0% in C, 6.5% in C-shadow**. Here the agent does use `Read` and `Grep`, so the v1.5 "Bash only" observation was corpus-specific, but every read is a chosen range and every search is small. File size does not reach the tool output. |
 | 1.9 | 2026-11-24 | Tested **build-system output** (clap in Rust, CsvHelper in .NET; 24 runs on pinned Sonnet 5.5, $3.05). The agent pipes **all 51** `cargo` and `dotnet` build or test calls through `tail` or `grep`, so about 2 KB of build output per run reaches it. Coverage fails on clap (14.9%) and passes on CsvHelper (54.5%) on only 31 KB of raw output. Four corpora now agree: Sonnet 5.5 limits its own tool output before AAES sees it. |
+| 2.0 | 2026-11-25 | Tested **package managers** (marked and ESLint with dependencies not installed, 16 runs, $3.04) and **long-running servers** (express, agent told to reproduce against a running HTTP server, 12 runs, $1.06). Both fail the coverage gate (15.8% and 0.0% in C). The agent ran `npm install` 6 times in 16 runs, all piped through `tail`, and ran each server inside one `Bash` call that starts it, sends `curl` requests and stops it. No result in either probe exceeds 10 KB. Six tool families on five corpora now agree. |
 
 ## Questions to answer
 Q0 Where do tool-output tokens actually go today, by tool and command family? Q1 Does the sidecar reduce raw delivered tool tokens? Q2 Does that translate to provider-billed and net monetary savings? Q3 Does it preserve or improve coding task success? Q4 Does added latency/CPU/RAM negate benefits? Q5 Does it protect concurrent sessions (within the stated tier)? Q6 Does learning improve quality-adjusted efficiency over time? Q7 How much of the gain does a zero-engineering prompt-only approach already capture?
@@ -852,6 +853,48 @@ Sonnet 5.5 with Claude Code 2.1.330 the agent limits its own tool output before 
 it reads chosen ranges, caps searches, and pipes test and build output through `tail` or `grep`.
 No tested family gives AAES a source large enough for a measurable saving on this stack. The
 Sonnet 5 result (C 24.4% below C-shadow) still holds for that stack only.
+
+### Package managers and long-running servers, checked (2026-11-25)
+
+Two families were still untested: package managers, and servers that run while the agent works.
+The harness gained two options for this (`bench/pilot/run_pilot.py`):
+
+- `--no-deps` builds the snapshot without its setup step, so the agent must install the
+  dependencies itself. Grading runs the setup first, so success is still judged on a complete
+  install.
+- `--prompt-style server` uses the discover prompt and adds an instruction to reproduce the bug
+  against a running HTTP server, keep it running while working, and check the fix the same way.
+  This makes the agent use a server. It measures how server output reaches the agent once a
+  server runs, not whether agents start servers unprompted.
+
+A new corpus, **express** (six verified tasks, `tasks/express.json`), carries the server probe.
+Both probes used arms C and C-shadow, one replication, `claude-sonnet-5-5` pinned, Claude Code
+2.1.330. Every row was served by Sonnet 5.5 only.
+
+| Probe | Series | Runs | Success | Cost | Byte coverage C / C-shadow | Raw shapeable bytes C / C-shadow |
+|---|---|---:|---:|---:|---|---|
+| Package managers (marked, ESLint; `--no-deps`) | `pkg55` | 16 | 14 | $3.04 | 15.8% / 37.0% | 72,307 / 52,707 |
+| Servers (express; `--prompt-style server`) | `srv55` | 12 | 12 | $1.06 | 0.0% / 0.0% | 17,379 / 21,303 |
+
+Both failures in the package probe (`marked-738ebebc8`, `eslint-899065e55`) are in C-shadow, which
+changes nothing the agent sees, so neither is an effect of shaping.
+
+**Package managers.** The agent ran `npm install` 6 times in 16 runs, and all 6 were filtered,
+for example `npm install --no-audit --no-fund 2>&1 | tail -3`. How the remaining runs obtained
+their dependencies was not traced (for example, `npx` can fetch a missing tool by itself). No tool
+result exceeds 10 KB; the largest are `Read` calls of 5 to 8 KB. C-shadow passes the byte gate,
+but on 53 KB of raw output across eight runs.
+
+**Servers.** The agent did not keep a server running across turns. Each check was one `Bash` call
+that writes the app, starts it with `&`, sends `curl` requests and stops it. Only one call in 12
+runs used a background shell. Server-related output was 25 results and 33 KB in total, at most
+2.5 KB per result. Across all 76 tool results none exceeds 4.8 KB.
+
+**Conclusion.** Six tool families on five corpora now give the same answer: test runners
+(JavaScript), large source files (Python), build systems (Rust, .NET), package managers (npm) and
+HTTP servers. On Sonnet 5.5 with Claude Code 2.1.330 the agent limits its own tool output in every
+family before AAES sees it. On this stack AAES has no source for a measurable saving. Still
+untested: older or smaller models that may not filter their own output.
 
 ## Multi-session isolation torture suite
 Scope: the Standard tier is tested for **accidental** leakage via AAES interfaces. Hardened/High-assurance tiers are additionally tested against direct filesystem access by a hostile session (`06_THREAT_MODEL.md`).

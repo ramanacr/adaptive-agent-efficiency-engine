@@ -74,6 +74,14 @@ def clap_oracle(tests: list[str], root: Path) -> str:
     return "cargo test -q --test builder -- " + " ".join(f"{m}::" for m in mods)
 
 
+def express_oracle(tests: list[str], root: Path) -> str:
+    # Express's own mocha options; shared helpers under test/support are not test files.
+    files = [t for t in tests if not t.startswith("test/support/")]
+    if not files:
+        return "echo no test file && exit 1"
+    return "npx mocha --require test/support/env --check-leaks " + " ".join(files)
+
+
 def csv_oracle(tests: list[str], root: Path) -> str:
     """Newest .NET 8+ target of the test project, run on the installed runtime (roll forward)."""
     proj = root / "tests" / "CsvHelper.Tests" / "CsvHelper.Tests.csproj"
@@ -151,6 +159,18 @@ REPOS: dict[str, dict] = {
         "setup": "cargo fetch",
         "oracle": clap_oracle,
         "discover_cmd": "cargo test --test builder <test module>:: (for example cargo test --test builder help::)",
+    },
+    # Web framework: lets a probe ask the agent to reproduce a bug against a running server
+    # (run_pilot.py --prompt-style server) and see whether server output reaches it unfiltered.
+    "express": {
+        "url": "https://github.com/expressjs/express",
+        "strata": [1, 13],
+        "src": r"^lib/.+\.js$",
+        "test": r"^test/.+\.js$",
+        "lock": "package.json",
+        "setup": "npm install --no-audit --no-fund --no-package-lock",
+        "oracle": express_oracle,
+        "discover_cmd": "npx mocha --require test/support/env --check-leaks <test file>",
     },
     "CsvHelper": {
         "url": "https://github.com/JoshClose/CsvHelper",

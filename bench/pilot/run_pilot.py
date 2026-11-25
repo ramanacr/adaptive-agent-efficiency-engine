@@ -74,6 +74,23 @@ Run one test file with:
 
 When you are done, reply with one line: DONE."""
 
+SERVER_PROMPT = """You are working in a checkout of {repo} ({url}).
+
+Bug report: {report}
+
+A test that reproduces the bug is already in the working tree, but you are not told which one.
+Find it, then fix the library source code so that it passes. Do not change any test.
+
+Run one test file with:
+    {suite}
+
+Also reproduce the bug against a running HTTP server, the way a user would: write a small app
+in a scratch file that loads this checkout, start it in the background, keep it running while
+you work, and send it requests (for example with curl). Check the fix the same way. Stop the
+server and delete the scratch file before you finish.
+
+When you are done, reply with one line: DONE."""
+
 CHAIN_PROMPT = """You are working in a checkout of {repo} ({url}).
 
 {count} separate bugs are reported below. A test that reproduces each one is already in the
@@ -198,9 +215,13 @@ def bugs_of(t: dict) -> list[dict]:
              "test_files": t["test_files"], "oracle": t["oracle"]}]
 
 
-def snapshot(work: Path, t: dict) -> Path:
-    """Base commit + each bug's test files, as a fresh one-commit repo, deps installed."""
-    snap = work / "snap" / t["id"]
+def snapshot(work: Path, t: dict, no_deps: bool = False) -> Path:
+    """Base commit + each bug's test files, as a fresh one-commit repo, deps installed.
+
+    With `no_deps` the setup step is skipped, so the agent has to install dependencies itself
+    and its package-manager output becomes part of the run.
+    """
+    snap = work / "snap" / (t["id"] + ("-nodeps" if no_deps else ""))
     tree = snap / "tree"
     if (snap / "ready").exists():
         return tree
@@ -225,7 +246,7 @@ def snapshot(work: Path, t: dict) -> Path:
     git("init -q", tree)
     git("add -A", tree)
     git("-c user.name=pilot -c user.email=pilot@example.invalid -c commit.gpgsign=false commit -q -m snapshot", tree)
-    if t.get("setup"):
+    if t.get("setup") and not no_deps:
         code, out = sh(t["setup"], tree, timeout=1800)
         if code:
             raise RuntimeError(f"setup failed for {t['id']}: {out[-500:]}")
@@ -345,7 +366,7 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
     rmtree(run)
     run.mkdir(parents=True)
     repo = run / "repo"
-    copy_snapshot(snapshot(work, t), repo)
+    copy_snapshot(snapshot(work, t, a.no_deps), repo)
     env = dict(os.environ)
     for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "AAES_HOOK_TOKEN", "AAES_RAW"):
         env.pop(k, None)
@@ -367,6 +388,9 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         prompt = CHAIN_PROMPT.format(repo=t["repo"], url=t["url"], count=len(bugs),
                                      reports=reports,
                                      suite=t.get("discover_cmd") or bugs[0]["oracle"])
+    elif a.prompt_style == "server":
+        prompt = SERVER_PROMPT.format(repo=t["repo"], url=t["url"], report=t["report"],
+                                      suite=t.get("discover_cmd") or t["oracle"])
     elif a.prompt_style == "discover":
         prompt = DISCOVER_PROMPT.format(repo=t["repo"], url=t["url"], report=t["report"],
                                         suite=t.get("discover_cmd") or t["oracle"])
@@ -405,6 +429,10 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
             elif (repo / path).exists():
                 (repo / path).unlink()
     per_bug, sections = {}, []
+    if a.no_deps and t.get("setup"):
+        # Grade on a complete install, whatever the agent installed or left half done.
+        scode, sout = sh(t["setup"], repo, env=env, timeout=1800)
+        sections.append(f"=== setup exit={scode} ===\n{sout[-2000:]}")
     for bug in bugs:
         bcode, bout = sh(bug["oracle"], repo, env=env, timeout=1200)
         per_bug[bug["id"]] = bcode == 0
@@ -452,7 +480,7 @@ def one_run(work: Path, t: dict, arm: str, rep: int, a, key: str | None) -> dict
         "aaes_report": bool(report), "model": a.model, "claude": a.claude_version,
         "served_models": served_models(tdir), "tag": a.tag or None,
         "run_dir": f"{t['id']}/{run_name(arm, rep, a.tag)}",
-        "prompt_style": a.prompt_style, "read_shaping": a.read_shaping,
+        "prompt_style": a.prompt_style, "read_shaping": a.read_shaping, "no_deps": a.no_deps,
         "bugs_total": len(bugs), "bugs_passed": sum(per_bug.values()),
         "per_bug": per_bug if t.get("chain") else None,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -471,8 +499,11 @@ def main() -> int:
     ap.add_argument("--arms", default=",".join(ARMS))
     ap.add_argument("--tasks", help="comma-separated task ids (default: all)")
     ap.add_argument("--max-turns", type=int, default=60)
-    ap.add_argument("--prompt-style", choices=["located", "discover"], default="located",
-                    help="located: name the failing test; discover: make the agent find it")
+    ap.add_argument("--prompt-style", choices=["located", "discover", "server"], default="located",
+                    help="located: name the failing test; discover: make the agent find it; "
+                         "server: discover, and also reproduce against a running HTTP server")
+    ap.add_argument("--no-deps", action="store_true",
+                    help="leave dependencies uninstalled, so the agent runs the package manager")
     ap.add_argument("--read-shaping", action="store_true",
                     help="turn read shaping on in the C arms (off by default, as AAES ships)")
     ap.add_argument("--timeout", type=int, default=1200, help="seconds per agent run")
@@ -493,7 +524,7 @@ def main() -> int:
     arms = a.arms.split(",")
     print(f"{len(tasks)} tasks, arms {arms}, {a.reps} reps, {a.claude_version}, model {a.model}")
     for t in tasks:
-        snapshot(a.work, t)
+        snapshot(a.work, t, a.no_deps)
     if a.prepare_only:
         print("snapshots ready")
         return 0

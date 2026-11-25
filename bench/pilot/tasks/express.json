@@ -1,0 +1,134 @@
+[
+  {
+    "id": "express-9a34acf03",
+    "repo": "express",
+    "url": "https://github.com/expressjs/express",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "3ce6d0eb86e9d93529ff3191c6bb5db8ce6e72c8",
+    "fix": "9a34acf03cb818ff3f8bc40e44176e277a25cbb9",
+    "test_files": [
+      "test/res.send.js"
+    ],
+    "src_files": [
+      "lib/response.js"
+    ],
+    "src_lines": 10,
+    "setup": "npm install --no-audit --no-fund --no-package-lock",
+    "oracle": "npx mocha --require test/support/env --check-leaks test/res.send.js",
+    "discover_cmd": "npx mocha --require test/support/env --check-leaks <test file>",
+    "report": "Preserve ETag generation with Transfer-Encoding"
+  },
+  {
+    "id": "express-ae6dd3768",
+    "repo": "express",
+    "url": "https://github.com/expressjs/express",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "ba006766fb964571723138708eacaba0f55759cd",
+    "fix": "ae6dd37680e3a00618d6c8a3e522f0ee4eeba1a4",
+    "test_files": [
+      "test/req.fresh.js"
+    ],
+    "src_files": [
+      "lib/request.js"
+    ],
+    "src_lines": 4,
+    "setup": "npm install --no-audit --no-fund --no-package-lock",
+    "oracle": "npx mocha --require test/support/env --check-leaks test/req.fresh.js",
+    "discover_cmd": "npx mocha --require test/support/env --check-leaks <test file>",
+    "report": "Allow conditional revalidation for QUERY requests"
+  },
+  {
+    "id": "express-18e5985b8",
+    "repo": "express",
+    "url": "https://github.com/expressjs/express",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "59e205a57a04fced6bb7b8ec0b5dec29461a9996",
+    "fix": "18e5985b8a9d5e8423db0a9121f22bdaecd5b120",
+    "test_files": [
+      "test/res.send.js"
+    ],
+    "src_files": [
+      "lib/response.js"
+    ],
+    "src_lines": 7,
+    "setup": "npm install --no-audit --no-fund --no-package-lock",
+    "oracle": "npx mocha --require test/support/env --check-leaks test/res.send.js",
+    "discover_cmd": "npx mocha --require test/support/env --check-leaks <test file>",
+    "report": "Add Content-Length header only if Transfer-Encoding is not present"
+  },
+  {
+    "id": "express-c9ecf7b65",
+    "repo": "express",
+    "url": "https://github.com/expressjs/express",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "a479419b16f5b97eb20f5dbae5848708ff30ce2d",
+    "fix": "c9ecf7b658388ccaa2b8470aabad92aabde458a2",
+    "test_files": [
+      "test/app.render.js"
+    ],
+    "src_files": [
+      "lib/application.js"
+    ],
+    "src_lines": 2,
+    "setup": "npm install --no-audit --no-fund --no-package-lock",
+    "oracle": "npx mocha --require test/support/env --check-leaks test/app.render.js",
+    "discover_cmd": "npx mocha --require test/support/env --check-leaks <test file>",
+    "report": "Allow passing null or undefined as the value for options in app.render"
+  },
+  {
+    "id": "express-9a3f7ff41",
+    "repo": "express",
+    "url": "https://github.com/expressjs/express",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "2cd372e34cd6613f4d00836c2ee122f28bddfcb3",
+    "fix": "9a3f7ff4120d7920a2d13809ff5ae78648c8a3d6",
+    "test_files": [
+      "test/res.redirect.js"
+    ],
+    "src_files": [
+      "lib/response.js"
+    ],
+    "src_lines": 3,
+    "setup": "npm install --no-audit --no-fund --no-package-lock",
+    "oracle": "npx mocha --require test/support/env --check-leaks test/res.redirect.js",
+    "discover_cmd": "npx mocha --require test/support/env --check-leaks <test file>",
+    "report": "Polish HTML structure of the response in the res.redirect() function"
+  },
+  {
+    "id": "express-2f64f68c3",
+    "repo": "express",
+    "url": "https://github.com/expressjs/express",
+    "strata": [
+      1,
+      13
+    ],
+    "base": "ed0ba3f1dc905d6b62eabf23bd383abcae4901ba",
+    "fix": "2f64f68c37c64ae333e41ff38032d21860f22255",
+    "test_files": [
+      "test/req.query.js"
+    ],
+    "src_files": [
+      "lib/utils.js"
+    ],
+    "src_lines": 2,
+    "setup": "npm install --no-audit --no-fund --no-package-lock",
+    "oracle": "npx mocha --require test/support/env --check-leaks test/req.query.js",
+    "discover_cmd": "npx mocha --require test/support/env --check-leaks <test file>",
+    "report": "Sec: security patch for CVE-2024-51999"
+  }
+]

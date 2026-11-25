@@ -1,4 +1,4 @@
-# Implementation Roadmap — AAES v2.0
+# Implementation Roadmap — AAES v2.1
 
 This is a build sequence, not a promise of timing. Each milestone has objective exit criteria.
 
@@ -25,6 +25,7 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 | 1.8 | 2026-11-23 | **Test-runner shaping checked and not built.** The agent filters all 146 `mocha` calls itself; the information-free remainder (framework stack frames, repeated failure lines) is about 2.5% of input, below the noise. On Sonnet 5.5 this corpus offers no source for a measurable saving. |
 | 1.9 | 2026-11-24 | **Larger-file corpus checked** (sqlglot, files up to 11,071 lines): coverage 0.0% in C and 6.5% in C-shadow, below the 30% gate. The agent uses `Read` and `Grep` here, but only for chosen ranges and small searches. Larger files are not the missing source. |
 | 2.0 | 2026-11-24 | **Build-system output checked** (clap in Rust, CsvHelper in .NET): the agent pipes all 51 `cargo` and `dotnet` calls through `tail` or `grep`. Four corpora agree that Sonnet 5.5 limits its own output, so no tested tool family gives AAES a measurable saving on this stack. |
+| 2.1 | 2026-11-25 | **Package managers and servers checked.** The agent filters `npm install` output and runs each server inside one start-curl-stop command, so both probes fail the coverage gate. Six tool families agree; only older or smaller models remain untested. |
 
 ## M-1 — Measure before building  *(done — GO)*
 - ✅ `aaes mine` (FUN-022): parallel, read-only analysis of Claude Code and Codex history with aggregate content-free output, `--probe` structure check, `--anonymize`, JSON + Markdown, and the go/no-go verdict at the 20% gate.
@@ -127,7 +128,10 @@ This is a build sequence, not a promise of timing. Each milestone has objective 
 - ⚠️ **On Sonnet 5.5 and this corpus, AAES has no source for a measurable saving.** The agent reads narrow ranges, filters test output and caps searches by itself. The Sonnet 5 result holds for that stack only.
 - ❌ Larger-file corpus (checked 2026-11-24). sqlglot, Python, eight verified tasks, 15 runs on pinned Sonnet 5.5, $3.09: **coverage 0.0% (C) and 6.5% (C-shadow)**. One tool result over 10 KB in 212. The agent made 22 `Read` and 33 `Grep` calls (so "Bash only" was corpus-specific), but every read was a chosen range and every search was small.
 - ❌ Build-system output (checked 2026-11-24). clap (Rust, 8 new tasks, compiled from scratch each run) and CsvHelper (.NET), 24 runs, $3.05: **all 51** `cargo` / `dotnet` build or test calls were piped through `tail` or `grep` by the agent, about 2 KB of build output per run. Coverage 14.9% on clap (fail); 54.5% on CsvHelper but on 31 KB of raw output in four runs.
-- ⚠️ **Four corpora agree** (JavaScript, Python with large files, Rust, .NET): on Sonnet 5.5 the agent limits its own tool output, so further efficiency series on this stack are not justified. Untested: package managers and long-running servers, and older or smaller models that may not filter.
+- ⚠️ **Four corpora agree** (JavaScript, Python with large files, Rust, .NET): on Sonnet 5.5 the agent limits its own tool output, so further efficiency series on this stack are not justified. Package managers and servers were checked on 2026-11-25 (below). Untested: older or smaller models that may not filter.
+- ❌ Package managers (checked 2026-11-25). marked and ESLint with dependencies not installed (`run_pilot.py --no-deps`), 16 runs, $3.04: 6 `npm install` calls, all piped through `tail`; coverage 15.8% in C (fail); no result over 10 KB.
+- ❌ Long-running servers (checked 2026-11-25). express, six new tasks, agent told to reproduce against a running HTTP server (`--prompt-style server`), 12 runs, $1.06: each server is started, queried with `curl` and stopped inside one `Bash` call; server output at most 2.5 KB per result; coverage 0.0%.
+- ⏳ Open: an older or smaller model (for example Sonnet 5 or Haiku) on the same corpora, to see whether an agent that does not filter its own output gives AAES a measurable source.
 - ⏳ Track B should run C and C-shadow on the same chains, so the shadow-controlled rebound rate exists for every family rather than being reconstructed afterwards.
 - ⏳ Read threshold: shaping starts at about 4,800 bytes, where the head and outline are not much smaller than the file, and both net-negative reads sat just above that line. This is the first public measurement of what the v0.5 benchmark entry suspected from local dogfooding. Five shaped reads in one run is a direction, not a calibration.
 - ⏳ Track B proper: one chain gives no task-level interval, so more chains must be mined before the bootstrap the plan specifies can run. Budget from the measured figure: about $70 per chain across four arms and three replications.
